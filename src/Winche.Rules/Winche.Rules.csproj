@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Winche.Rules</PackageId>
+    <Description>A Firestore-style, declarative, JSON-serializable authorization rules engine. Define document access rules in C# (or load them as data), evaluate them in memory, and analyze queries against them. Backend-agnostic via small adapter ports.</Description>
+    <PackageTags>authorization;rules;firestore;access-control;security-rules;dotnet</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Winche.Rules.Tests" />
+  </ItemGroup>
+
+</Project>
