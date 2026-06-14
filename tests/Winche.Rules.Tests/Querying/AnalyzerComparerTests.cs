@@ -17,11 +17,11 @@ public class AnalyzerComparerTests
     [Fact]
     public void Analyzer_UsesContextComparer_ForAtomProof()
     {
-        // rule: allow list if resource.data.ownerId == "X"
+        // rule: allow list if resource.ownerId == "X"
         var ruleset = RulesetBuilder.Build(r =>
             r.Match("docs/{id}", m => m.Allow(RuleOperations.Read,
                 new CompareExpression(
-                    new MemberExpression(new MemberExpression(new VarExpression("resource"), "data"), "ownerId"),
+                    new MemberExpression(new VarExpression("resource"), "ownerId"),
                     ComparisonOperator.Eq,
                     new LiteralExpression(RuleValue.String("X"))))));
 

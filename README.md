@@ -122,7 +122,7 @@ RuleSet rules = RulesetBuilder.Build(r =>
     r.Match("users/{userId}", u =>
     {
         // Owner can read their own resource
-        u.Allow(RuleOperations.Read,  Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")));
+        u.Allow(RuleOperations.Read,  Expr.Resource("ownerId").Eq(Expr.Auth("uid")));
         // Owner can write (create/update/delete) to their own path
         u.Allow(RuleOperations.Write, Expr.Auth("uid").Eq(Expr.Param("userId")));
 
@@ -196,24 +196,24 @@ Expr.Size(valueExpr)             // size(string|list|map)
 **Examples**:
 
 ```csharp
-// resource.data.public == true || resource.data.ownerId == request.auth.uid
+// resource.public == true || resource.ownerId == request.auth.uid
 Expr.Any(
-    Expr.Resource("data", "public").Eq(true),
-    Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")))
+    Expr.Resource("public").Eq(true),
+    Expr.Resource("ownerId").Eq(Expr.Auth("uid")))
 
 // Guard against unauthenticated callers before reading auth.uid
 Expr.All(
     Expr.Auth().Ne(Expr.Null),
-    Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")))
+    Expr.Resource("ownerId").Eq(Expr.Auth("uid")))
 
-// request.auth.uid in resource.data.members
-Expr.Auth("uid").In(Expr.Resource("data", "members"))
+// request.auth.uid in resource.members
+Expr.Auth("uid").In(Expr.Resource("members"))
 
-// size(resource.data.tags) <= 10
-Expr.Size(Expr.Resource("data", "tags")).Le(Expr.Const(10L))
+// size(resource.tags) <= 10
+Expr.Size(Expr.Resource("tags")).Le(Expr.Const(10L))
 
 // Incoming resource must set ownerId to the caller's uid
-Expr.RequestResource("data", "ownerId").Eq(Expr.Auth("uid"))
+Expr.RequestResource("ownerId").Eq(Expr.Auth("uid"))
 ```
 
 ---
@@ -236,10 +236,7 @@ bool allowed = await engine.AllowsAsync(
     {
         Resource = RuleValue.Map(new Dictionary<string, RuleValue>
         {
-            ["data"] = RuleValue.Map(new Dictionary<string, RuleValue>
-            {
-                ["ownerId"] = RuleValue.String("u1"),
-            }),
+            ["ownerId"] = RuleValue.String("u1"),
         }),
         Request = RuleValue.Map(new Dictionary<string, RuleValue>
         {
@@ -258,7 +255,7 @@ bool listAllowed = engine.Allows(constraints, new RuleRequest { Request = /* req
 
 | Member | Meaning |
 | - | - |
-| `Resource` | The existing resource as a `RuleValue.Map` (`{ data, id, __name__ }`), or `RuleValue.Null`. |
+| `Resource` | The existing resource as a `RuleValue.Map` (whatever field shape your rules navigate), or `RuleValue.Null`. |
 | `Request` | The request map — `auth`, `method`, `time`, and `resource` (the incoming map) as needed. |
 | `Params` | Extra params; path-pattern captures bound by the engine take precedence. Defaults to none. |
 | `Provider` | An `IRuleResourceProvider` for `get()`/`exists()`; `null` when no rule uses them. |
@@ -278,7 +275,7 @@ using Winche.Rules.DependencyInjection;
 
 services.AddWincheRules(o => o
     .WithRuleset(r => r.Match("users/{userId}", u =>
-        u.Allow(RuleOperations.Read, Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")))))
+        u.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))))
     // .WithRuleset(existingRuleSet)        // overload that takes a prebuilt RuleSet
     // .WithComparer(myComparer)            // optional; defaults to DefaultRuleValueComparer
 );
@@ -336,15 +333,11 @@ bool allowed = await RulesetEvaluator.AllowsAsync(
 ```csharp
 var context = new RuleContext
 {
-    // The existing resource as a map — convention: { data: {...}, id: "...", __name__: path }
+    // The existing resource as a map — its field layout is entirely yours.
     // Set to RuleValue.Null when the resource does not exist (e.g. for a create).
     Resource = RuleValue.Map(new Dictionary<string, RuleValue>
     {
-        ["data"]     = RuleValue.Map(new Dictionary<string, RuleValue>
-        {
-            ["ownerId"] = RuleValue.String("u1"),
-        }),
-        ["__name__"] = RuleValue.Path("users/u1"),
+        ["ownerId"] = RuleValue.String("u1"),
     }),
 
     // The request object — a map with at minimum "auth" and "method"
@@ -390,14 +383,14 @@ using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
 using Winche.Rules.Querying;
 
-// Rule: allow read if resource.data.ownerId == request.auth.uid
+// Rule: allow read if resource.ownerId == request.auth.uid
 RuleSet rules = RulesetBuilder.Build(r =>
     r.Match("users/{userId}", u =>
         u.Allow(RuleOperations.Read,
-            Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")))));
+            Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
 
 // Map each of your query's where-clauses to a QueryConstraint.
-// Field path is relative to resource.data.
+// The field path matches how your rule navigates the resource (here: resource.ownerId).
 var constrainedQuery = new QueryConstraints(
     collection: "users",
     constraints: [new QueryConstraint(["ownerId"], ComparisonOperator.Eq, RuleValue.String("u1"))]);
@@ -450,10 +443,7 @@ public sealed class MyResourceProvider(IMyStore store) : IRuleResourceProvider
     {
         var item = await store.GetAsync(path, ct);
         if (item is null) return RuleValue.Null;
-        return RuleValue.Map(new Dictionary<string, RuleValue>
-        {
-            ["data"] = /* convert item.Fields to RuleValue.Map */,
-        });
+        return RuleValue.Map(/* convert item's fields to a Dictionary<string, RuleValue> */);
     }
 }
 ```
@@ -466,7 +456,7 @@ RuleSet rules = RulesetBuilder.Build(r =>
     r.Match("docs/{id}", d =>
         d.Allow(RuleOperations.Read, Expr.All(
             Expr.Exists(Expr.Const("teams/t1")),
-            Expr.Get(Expr.Const("teams/t1")).Field("data").Field("active").Eq(true)))));
+            Expr.Get(Expr.Const("teams/t1")).Field("active").Eq(true)))));
 
 var engine = new RuleEngine(rules);
 bool allowed = await engine.AllowsAsync(RuleOperation.Get, "docs/d1", new RuleRequest
@@ -515,7 +505,7 @@ string json = RuleJson.Serialize(rules);
 RuleSet restored = RuleJson.DeserializeRuleset(json);
 
 // Expression round-trip
-string exprJson          = RuleJson.Serialize(Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")));
+string exprJson          = RuleJson.Serialize(Expr.Resource("ownerId").Eq(Expr.Auth("uid")));
 RuleExpression restored2 = RuleJson.DeserializeExpr(exprJson);
 ```
 
@@ -542,7 +532,7 @@ Map field names must not begin with `$` (it is reserved for the tagged-value enc
 
 The engine needs a few adapters, all of which you provide:
 
-1. **Entity → `RuleValue`** — convert each resource from your storage type to a `RuleValue.Map` with a `data` key (and optionally `id`, `__name__`). This is pure mapping code; no interface is required.
+1. **Entity → `RuleValue`** — convert each resource from your storage type to a `RuleValue.Map`. The map's field layout is entirely yours; your rules navigate whatever keys you put in it. This is pure mapping code; no interface is required.
 
 2. **Query → `QueryConstraints`** — map each `where` clause of your query to a `QueryConstraint(fieldPath, op, value)` and wrap them in a `QueryConstraints(collection, constraints)`.
 

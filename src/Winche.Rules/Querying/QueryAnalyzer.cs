@@ -174,9 +174,9 @@ public static class QueryAnalyzer
             members.Insert(0, m.Name);
             e = m.Target;
         }
-        if (e is VarExpression { Name: "resource" } && members.Count >= 2 && members[0] == "data")
+        if (e is VarExpression { Name: "resource" } && members.Count >= 1)
         {
-            path = members.GetRange(1, members.Count - 1);
+            path = members;
             return true;
         }
         path = [];

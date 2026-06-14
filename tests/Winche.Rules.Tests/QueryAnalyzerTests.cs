@@ -31,7 +31,7 @@ public class QueryAnalyzerTests
     {
         var rs = RulesetBuilder.Build(r =>
             r.Match("users/{userId}", u =>
-                u.Allow(RuleOperations.Read, Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")))));
+                u.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
 
         Assert.True(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1")); // constrained to me
         Assert.False(Allows(rs, Q("users"), "u1"));                                                     // unconstrained → reject
@@ -46,8 +46,8 @@ public class QueryAnalyzerTests
     {
         var rs = RulesetBuilder.Build(r =>
             r.Match("docs/{id}", d => d.Allow(RuleOperations.Read, Expr.Any(
-                Expr.Resource("data", "isPublic").Eq(true),
-                Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid"))))));
+                Expr.Resource("isPublic").Eq(true),
+                Expr.Resource("ownerId").Eq(Expr.Auth("uid"))))));
 
         Assert.True(Allows(rs, Q("docs", C("isPublic", ComparisonOperator.Eq, RuleValue.Bool(true))), "u1"));   // proves public branch
         Assert.True(Allows(rs, Q("docs", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));  // proves owner branch
@@ -70,7 +70,7 @@ public class QueryAnalyzerTests
     public void Range_ExactAndEqualityPinProve_WeakerRejected()
     {
         var rs = RulesetBuilder.Build(r =>
-            r.Match("people/{id}", d => d.Allow(RuleOperations.Read, Expr.Resource("data", "age").Ge(Expr.Const(18)))));
+            r.Match("people/{id}", d => d.Allow(RuleOperations.Read, Expr.Resource("age").Ge(Expr.Const(18)))));
 
         Assert.True(Allows(rs, Q("people", C("age", ComparisonOperator.Ge, RuleValue.Int(18))), "x"));   // exact
         Assert.True(Allows(rs, Q("people", C("age", ComparisonOperator.Eq, RuleValue.Int(20))), "x"));   // pinned 20 ≥ 18
@@ -105,7 +105,7 @@ public class QueryAnalyzerTests
         var rs = RulesetBuilder.Build(r =>
             r.Match("users/{userId}", u =>
                 u.Match("posts/{postId}", p =>
-                    p.Allow(RuleOperations.Read, Expr.Resource("data", "authorId").Eq(Expr.Param("userId"))))));
+                    p.Allow(RuleOperations.Read, Expr.Resource("authorId").Eq(Expr.Param("userId"))))));
 
         // userId is bound to u1 from the collection path; query pins authorId == u1 → provable
         Assert.True(Allows(rs, Q("users/u1/posts", C("authorId", ComparisonOperator.Eq, RuleValue.String("u1"))), "anyone"));
@@ -142,7 +142,7 @@ public class QueryAnalyzerTests
         // match /users/{doc=**} — governs "users" itself and any subcollection under "users".
         var rs = RulesetBuilder.Build(r =>
             r.Match("users/{doc=**}", b =>
-                b.Allow(RuleOperations.Read, Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")))));
+                b.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
 
         // list on "users" constrained to ownerId == uid → allowed
         Assert.True(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));
@@ -160,7 +160,7 @@ public class QueryAnalyzerTests
         // match /orgs/{orgId}/{doc=**} — orgId is captured from the second collection segment.
         var rs = RulesetBuilder.Build(r =>
             r.Match("orgs/{orgId}/{doc=**}", b =>
-                b.Allow(RuleOperations.Read, Expr.Resource("data", "org").Eq(Expr.Param("orgId")))));
+                b.Allow(RuleOperations.Read, Expr.Resource("org").Eq(Expr.Param("orgId")))));
 
         // "orgs/acme/items" → orgId bound to "acme"; query pins org == "acme" → allowed
         Assert.True(Allows(rs, Q("orgs/acme/items", C("org", ComparisonOperator.Eq, RuleValue.String("acme"))), "any"));

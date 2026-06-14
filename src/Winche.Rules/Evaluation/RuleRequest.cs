@@ -10,7 +10,7 @@ namespace Winche.Rules.Evaluation;
 /// </summary>
 public sealed class RuleRequest
 {
-    /// <summary>The existing document resource (<c>{data,id,__name__}</c>), or <see cref="RuleValue.Null"/>.</summary>
+    /// <summary>The existing resource as a map (its field layout is entirely up to you), or <see cref="RuleValue.Null"/>.</summary>
     public RuleValue Resource { get; init; } = RuleValue.Null;
 
     /// <summary>The request map (<c>auth</c>, <c>resource</c>, <c>time</c>, <c>method</c>, …), or <see cref="RuleValue.Null"/>.</summary>

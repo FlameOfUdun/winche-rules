@@ -15,7 +15,7 @@ public sealed class RuleContext
     public static readonly IReadOnlyDictionary<string, RuleValue> NoParams = new ReadOnlyDictionary<string, RuleValue>(new Dictionary<string, RuleValue>());
 
     /// <summary>
-    /// The existing document (typically a map <c>{data, id, __name__}</c>), or <see cref="RuleValue.Null"/>.
+    /// The existing resource as a map (its field layout is entirely up to you), or <see cref="RuleValue.Null"/>.
     /// </summary>
     public RuleValue Resource { get; init; } = RuleValue.Null;
 

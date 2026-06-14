@@ -3,13 +3,13 @@ namespace Winche.Rules.Expressions;
 /// <summary>
 /// Fluent factory for rule condition expressions:
 /// <code>
-/// // resource.data.ownerId == request.auth.uid
-/// Expr.Resource("data","ownerId").Eq(Expr.Auth("uid"))
+/// // resource.ownerId == request.auth.uid
+/// Expr.Resource("ownerId").Eq(Expr.Auth("uid"))
 ///
-/// // resource.data.public == true || resource.data.ownerId == request.auth.uid
+/// // resource.public == true || resource.ownerId == request.auth.uid
 /// Expr.Any(
-///     Expr.Resource("data","public").Eq(true),
-///     Expr.Resource("data","ownerId").Eq(Expr.Auth("uid")))
+///     Expr.Resource("public").Eq(true),
+///     Expr.Resource("ownerId").Eq(Expr.Auth("uid")))
 /// </code>
 /// </summary>
 public static class Expr
@@ -95,7 +95,7 @@ public static class Expr
     public static RuleExpression Exists(RuleExpression path) => Call("exists", path);
 
     /// <summary>
-    /// The document at <paramref name="path"/> (a map; use <c>.Field("data")</c> to read fields).
+    /// The resource at <paramref name="path"/> (a map; navigate its fields with <c>.Field(...)</c>).
     /// </summary>
     public static RuleExpression Get(RuleExpression path) => Call("get", path);
 
