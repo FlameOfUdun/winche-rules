@@ -6,7 +6,7 @@ namespace Winche.Rules.Json;
 
 /// <summary>
 /// JSON for <see cref="RuleValue"/>. Unambiguous kinds use natural JSON (null/bool/string/list); kinds JSON
-/// can't represent faithfully are tagged single-key objects: <c>{"$int":"5"}</c>, <c>{"$double":1.5}</c>,
+/// can't represent faithfully are tagged single-key objects: <c>{"$integer":"5"}</c>, <c>{"$double":1.5}</c>,
 /// <c>{"$timestamp":"…"}</c>, <c>{"$bytes":"base64"}</c>, <c>{"$path":"…"}</c>. A plain object (no <c>$</c>-tag) is a
 /// map — so map field names must not begin with <c>$</c>.
 /// </summary>
@@ -51,7 +51,7 @@ public sealed class RuleValueJsonConverter : JsonConverter<RuleValue>
             reader.Read();
             RuleValue scalar = firstName switch
             {
-                "$int" => RuleValue.Int(long.Parse(reader.GetString()!, CultureInfo.InvariantCulture)),
+                "$integer" => RuleValue.Int(long.Parse(reader.GetString()!, CultureInfo.InvariantCulture)),
                 "$double" => RuleValue.Double(reader.GetDouble()),
                 "$timestamp" => RuleValue.Timestamp(DateTimeOffset.Parse(reader.GetString()!, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)),
                 "$bytes" => RuleValue.Bytes(Convert.FromBase64String(reader.GetString()!)),
@@ -91,7 +91,7 @@ public sealed class RuleValueJsonConverter : JsonConverter<RuleValue>
                 writer.WriteStringValue(value.AsString); 
                 break;
             case RuleValueKind.Int: 
-                WriteTagged(writer, "$int", value.AsInt.ToString(CultureInfo.InvariantCulture));
+                WriteTagged(writer, "$integer", value.AsInt.ToString(CultureInfo.InvariantCulture));
                 break;
             case RuleValueKind.Double: 
                 writer.WriteStartObject(); 

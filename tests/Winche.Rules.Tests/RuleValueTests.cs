@@ -77,8 +77,8 @@ public class RuleValueTests
     [Fact]
     public void Json_DistinguishesIntFromDouble()
     {
-        Assert.Equal("{\"$int\":\"5\"}", JsonSerializer.Serialize(RuleValue.Int(5)));
-        Assert.Equal(RuleValueKind.Int, JsonSerializer.Deserialize<RuleValue>("{\"$int\":\"5\"}").Kind);
+        Assert.Equal("{\"$integer\":\"5\"}", JsonSerializer.Serialize(RuleValue.Int(5)));
+        Assert.Equal(RuleValueKind.Int, JsonSerializer.Deserialize<RuleValue>("{\"$integer\":\"5\"}").Kind);
         Assert.Equal(RuleValueKind.Double, JsonSerializer.Deserialize<RuleValue>("{\"$double\":5}").Kind);
     }
 

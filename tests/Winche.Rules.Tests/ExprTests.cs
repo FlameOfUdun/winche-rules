@@ -41,8 +41,8 @@ public class ExprTests
     public void Json_CarriesKindDiscriminators()
     {
         var json = RuleJson.Serialize(Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")));
-        Assert.Contains("\"kind\":\"compare\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"kind\":\"comparison\"", json, StringComparison.Ordinal);
         Assert.Contains("\"kind\":\"member\"", json, StringComparison.Ordinal);
-        Assert.Contains("\"kind\":\"var\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"kind\":\"variable\"", json, StringComparison.Ordinal);
     }
 }

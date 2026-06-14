@@ -519,7 +519,7 @@ string exprJson          = RuleJson.Serialize(Expr.Resource("data", "ownerId").E
 RuleExpression restored2 = RuleJson.DeserializeExpr(exprJson);
 ```
 
-Expression nodes use a `kind` discriminator (`"lit"`, `"var"`, `"member"`, `"index"`, `"compare"`, `"and"`, `"or"`, `"not"`, `"in"`, `"cond"`, `"call"`). `RuleValue` uses natural JSON for common kinds and tagged single-key objects for kinds JSON cannot faithfully represent:
+Expression nodes use a `kind` discriminator: `"literal"`, `"variable"`, `"member"`, `"index"`, `"comparison"`, `"and"`, `"or"`, `"not"`, `"in"`, `"conditional"`, `"call"`. `RuleValue` uses natural JSON for common kinds and tagged single-key objects for kinds JSON cannot faithfully represent:
 
 | Kind | JSON representation |
 | - | - |
@@ -528,9 +528,9 @@ Expression nodes use a `kind` discriminator (`"lit"`, `"var"`, `"member"`, `"ind
 | `String` | `"..."` |
 | `List` | `[...]` |
 | `Map` | `{...}` |
-| `Int` | `{"$int":"42"}` |
+| `Int` | `{"$integer":"42"}` |
 | `Double` | `{"$double":3.14}` |
-| `Timestamp` | `{"$ts":"2025-01-01T00:00:00+00:00"}` |
+| `Timestamp` | `{"$timestamp":"2025-01-01T00:00:00+00:00"}` |
 | `Bytes` | `{"$bytes":"<base64>"}` |
 | `Path` | `{"$path":"users/u1"}` |
 

@@ -25,16 +25,16 @@ public enum ComparisonOperator
 /// discriminator), and evaluated against an evaluation context (resource/request/auth/params).
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
-[JsonDerivedType(typeof(LiteralExpression), "lit")]
-[JsonDerivedType(typeof(VarExpression), "var")]
+[JsonDerivedType(typeof(LiteralExpression), "literal")]
+[JsonDerivedType(typeof(VarExpression), "variable")]
 [JsonDerivedType(typeof(MemberExpression), "member")]
 [JsonDerivedType(typeof(IndexExpression), "index")]
-[JsonDerivedType(typeof(CompareExpression), "compare")]
+[JsonDerivedType(typeof(CompareExpression), "comparison")]
 [JsonDerivedType(typeof(AndExpression), "and")]
 [JsonDerivedType(typeof(OrExpression), "or")]
 [JsonDerivedType(typeof(NotExpression), "not")]
 [JsonDerivedType(typeof(InExpression), "in")]
-[JsonDerivedType(typeof(ConditionalExpression), "cond")]
+[JsonDerivedType(typeof(ConditionalExpression), "conditional")]
 [JsonDerivedType(typeof(CallExpression), "call")]
 public abstract record RuleExpression;
 
