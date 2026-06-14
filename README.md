@@ -2,46 +2,77 @@
 
 [![NuGet](https://img.shields.io/nuget/v/Winche.Rules.svg)](https://www.nuget.org/packages/Winche.Rules)
 
-A **standalone, declarative, JSON-serializable authorization rules engine** for .NET. You define document access rules in C# (or load them as data from JSON), and the engine evaluates them **in memory** — no database call required. It is **backend-agnostic**: you connect it to your own document store and query model through small adapter ports. Winche.Rules is the engine that powers Winche.Database's access control, but it carries no dependency on that library and can be used in any .NET project that works with documents at paths and caller claims.
+A **standalone, declarative, JSON-serializable authorization rules engine** for .NET. You define access rules for path-based resources in C# (or load them as data from JSON), and the engine evaluates them **in memory** — no backend call required. It is **backend-agnostic**: you connect it to your own resource store and query model through small adapter ports. Winche.Rules powers Winche.Database's access control, but it carries no dependency on that library and can be used in any .NET project that authorizes resources addressed by path against per-request caller claims.
+
+A "resource" here is anything you can address by a path — a record, a file, a row, an object — represented to the engine as a map of fields.
 
 ---
 
 ## Contents
 
 1. [Core ideas](#core-ideas)
-2. [The value model](#the-value-model-rulevalue)
-3. [Defining rules](#defining-rules-rulesetbuilder--expr)
-4. [The engine](#the-engine-ruleengine)
-5. [Dependency injection](#dependency-injection-addwincherules)
-6. [Evaluating single-document operations](#evaluating-single-document-operations)
-7. [Authorizing queries (list)](#authorizing-queries-list)
-8. [Cross-document conditions (get / exists)](#cross-document-conditions-get--exists)
-9. [Comparison semantics](#comparison-semantics-irulevaluecomparer)
-10. [Rules as data (JSON)](#rules-as-data-json)
-11. [Pluggability — connecting your project](#pluggability--connecting-your-project)
-12. [Composing rulesets](#composing-rulesets)
-13. [Public API reference](#public-api-reference)
-14. [Requirements and license](#requirements-and-license)
+2. [How it works](#how-it-works)
+3. [The value model](#the-value-model-rulevalue)
+4. [Defining rules](#defining-rules-rulesetbuilder--expr)
+5. [The engine](#the-engine-ruleengine)
+6. [Dependency injection](#dependency-injection-addwincherules)
+7. [Evaluating single-resource operations](#evaluating-single-resource-operations)
+8. [Authorizing queries (list)](#authorizing-queries-list)
+9. [Cross-resource conditions (get / exists)](#cross-resource-conditions-get--exists)
+10. [Comparison semantics](#comparison-semantics-irulevaluecomparer)
+11. [Rules as data (JSON)](#rules-as-data-json)
+12. [Pluggability — connecting your project](#pluggability--connecting-your-project)
+13. [Composing rulesets](#composing-rulesets)
+14. [Public API reference](#public-api-reference)
+15. [Requirements and license](#requirements-and-license)
 
 ---
 
 ## Core ideas
 
-Winche.Rules implements a declarative, document-path authorization model.
+Winche.Rules implements a declarative, path-based authorization model.
 
 **Allow-only, default-deny, OR semantics.** Every rule is an `allow` — there is no `deny`. If no `allow` rule matches and evaluates to `true`, the operation is rejected. When multiple rules match a path, access is granted if *any one* of them evaluates to `true`.
 
-**Rules are not filters.** This is the most important design point for `list`/query operations. The engine does **not** silently remove documents from a result set. Instead, it analyzes the query's constraints *before* execution and asks: "Does this query's shape provably guarantee that every result satisfies a read rule?" If yes, the query is allowed. If not, the query is **rejected** and the client must add the necessary constraints. This is the `QueryAnalyzer`, and it is *sound*: it only allows queries it can prove safe; it rejects anything it cannot prove, including rules that use `get()`/`exists()`, ternaries, or `in`.
+**Rules are not filters.** This is the most important design point for `list`/query operations. The engine does **not** silently remove resources from a result set. Instead, it analyzes the query's constraints *before* execution and asks: "Does this query's shape provably guarantee that every result satisfies a read rule?" If yes, the query is allowed. If not, the query is **rejected** and the client must add the necessary constraints. This is the `QueryAnalyzer`, and it is *sound*: it only allows queries it can prove safe; it rejects anything it cannot prove, including rules that use `get()`/`exists()`, ternaries, or `in`.
 
-**Single-document operations** (`get`, `create`, `update`, `delete`) are evaluated by loading the document and running the condition **in memory**. The engine never touches your database on its own; you hand it the pre-loaded document.
+**Single-resource operations** (`get`, `create`, `update`, `delete`) are evaluated by loading the resource and running the condition **in memory**. The engine never touches your backing store on its own; you hand it the pre-loaded resource.
 
 **Evaluation semantics.** A condition grants only when it evaluates to boolean `true`. Any other outcome — a missing field, a type mismatch, null navigation — denies rather than throws. Errors are swallowed by the evaluator (fail-closed semantics).
 
 ---
 
+## How it works
+
+The engine sits between your application's request and your backing store. You adapt your types into the engine's neutral inputs; it returns an allow/deny decision.
+
+```mermaid
+flowchart LR
+    subgraph You["Your application"]
+        Claims["Caller claims + target path"]
+        Res["Your resources"]
+        Q["Your query where-clauses"]
+        Store["Backing store"]
+    end
+
+    subgraph Engine["Winche.Rules"]
+        RE["RuleEngine<br/>(RuleSet + comparer)"]
+    end
+
+    Claims --> RE
+    Res -->|map to RuleValue| RE
+    Q -->|map to QueryConstraints| RE
+    RE --> Dec{"Allow?"}
+    Dec -->|true| OK["Operation proceeds"]
+    Dec -->|false| NO["Rejected · default-deny"]
+    RE -. "get()/exists()" .-> Store
+```
+
+---
+
 ## The value model (`RuleValue`)
 
-Everything the engine touches is a `RuleValue` — a neutral, JSON-ish value independent of any storage type. A document is a `RuleValue.Map` of field names to values.
+Everything the engine touches is a `RuleValue` — a neutral, JSON-ish value independent of any storage type. A resource is a `RuleValue.Map` of field names to values.
 
 ```csharp
 using Winche.Rules;
@@ -90,7 +121,7 @@ using Winche.Rules.Expressions;
 RuleSet rules = RulesetBuilder.Build(r =>
     r.Match("users/{userId}", u =>
     {
-        // Owner can read their own document
+        // Owner can read their own resource
         u.Allow(RuleOperations.Read,  Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")));
         // Owner can write (create/update/delete) to their own path
         u.Allow(RuleOperations.Write, Expr.Auth("uid").Eq(Expr.Param("userId")));
@@ -109,9 +140,9 @@ RuleSet rules = RulesetBuilder.Build(r =>
 
 | Factory | What it maps to |
 | - | - |
-| `Expr.Resource(...)` | `resource` then the given field path — the **existing** document |
+| `Expr.Resource(...)` | `resource` then the given field path — the **existing** resource |
 | `Expr.Request(...)` | `request` then the given path |
-| `Expr.RequestResource(...)` | `request.resource` then the given path — the **incoming** (post-write) document |
+| `Expr.RequestResource(...)` | `request.resource` then the given path — the **incoming** (post-write) resource |
 | `Expr.Auth(...)` | `request.auth` then the given path — caller claims (`uid`, `token.role`, …) |
 | `Expr.Param("userId")` | A path-capture variable (`{userId}` from the match pattern) |
 | `Expr.Time()` | `request.time` |
@@ -181,7 +212,7 @@ Expr.Auth("uid").In(Expr.Resource("data", "members"))
 // size(resource.data.tags) <= 10
 Expr.Size(Expr.Resource("data", "tags")).Le(Expr.Const(10L))
 
-// Incoming document must set ownerId to the caller's uid
+// Incoming resource must set ownerId to the caller's uid
 Expr.RequestResource("data", "ownerId").Eq(Expr.Auth("uid"))
 ```
 
@@ -197,7 +228,7 @@ using Winche.Rules.Evaluation;
 
 var engine = new RuleEngine(rules);          // optional 2nd arg: a custom IRuleValueComparer
 
-// Single-document operation (get / create / update / delete)
+// Single-resource operation (get / create / update / delete)
 bool allowed = await engine.AllowsAsync(
     RuleOperation.Get,
     "users/u1",
@@ -227,14 +258,14 @@ bool listAllowed = engine.Allows(constraints, new RuleRequest { Request = /* req
 
 | Member | Meaning |
 | - | - |
-| `Resource` | The existing document as a `RuleValue.Map` (`{ data, id, __name__ }`), or `RuleValue.Null`. |
-| `Request` | The request map — `auth`, `method`, `time`, and `resource` (the incoming doc) as needed. |
+| `Resource` | The existing resource as a `RuleValue.Map` (`{ data, id, __name__ }`), or `RuleValue.Null`. |
+| `Request` | The request map — `auth`, `method`, `time`, and `resource` (the incoming map) as needed. |
 | `Params` | Extra params; path-pattern captures bound by the engine take precedence. Defaults to none. |
 | `Provider` | An `IRuleResourceProvider` for `get()`/`exists()`; `null` when no rule uses them. |
 
 The comparer is supplied by the engine, so it is intentionally **not** a field of `RuleRequest`.
 
-> The static entry points `RulesetEvaluator.AllowsAsync` and `QueryAnalyzer.Allows` (which take a `RuleContext`) remain available as a lower-level API — `RuleEngine` is a thin facade over them. See [Evaluating single-document operations](#evaluating-single-document-operations).
+> The static entry points `RulesetEvaluator.AllowsAsync` and `QueryAnalyzer.Allows` (which take a `RuleContext`) remain available as a lower-level API — `RuleEngine` is a thin facade over them. See [Evaluating single-resource operations](#evaluating-single-resource-operations).
 
 ---
 
@@ -258,11 +289,34 @@ var engine = provider.GetRequiredService<RuleEngine>();
 
 `WincheRulesOptions` is a fluent builder: `WithRuleset(RuleSet)`, `WithRuleset(Action<RulesetBuilder>)`, and `WithComparer(IRuleValueComparer)`. Every `RuleSet` registered in the container is merged at resolution time (`RuleSet.Merge`), so repeated `AddWincheRules` calls — or rulesets registered elsewhere — accumulate. The engine is registered with `TryAddSingleton`, so the first registration's comparer wins.
 
+```mermaid
+flowchart LR
+    A["AddWincheRules(o =><br/>o.WithRuleset(...)<br/>.WithComparer(...))"] --> RS[("RuleSet<br/>singletons")]
+    A --> RE["RuleEngine<br/>singleton"]
+    RS -->|"RuleSet.Merge(all)"| RE
+    RE --> App["Resolved by your services"]
+```
+
 ---
 
-## Evaluating single-document operations
+## Evaluating single-resource operations
 
 The lower-level static API for `get`, `create`, `update`, and `delete` is `RulesetEvaluator.AllowsAsync`, which takes a `RuleContext` (the comparer is a field of the context here). For `list` (queries), use `QueryAnalyzer` instead (see the next section).
+
+```mermaid
+flowchart TD
+    S["Operation on a path<br/>get / create / update / delete"] --> M["Match the path against<br/>each rule's pattern"]
+    M --> B{"Any matching<br/>allow block for<br/>this operation?"}
+    B -->|no| Deny["Deny · default-deny"]
+    B -->|yes| Bind["Bind path captures<br/>(e.g. userId) as params"]
+    Bind --> L["Take next matching allow rule"]
+    L --> EV["Evaluate its condition<br/>in memory"]
+    EV --> C{"Evaluates to<br/>boolean true?"}
+    C -->|yes| Grant["Allow"]
+    C -->|"no / error"| More{"More rules?"}
+    More -->|yes| L
+    More -->|no| Deny
+```
 
 ```csharp
 using Winche.Rules;
@@ -271,7 +325,7 @@ using Winche.Rules.Evaluation;
 bool allowed = await RulesetEvaluator.AllowsAsync(
     rules,
     RuleOperation.Get,
-    "users/u1",         // the full document path being accessed
+    "users/u1",         // the full path being accessed
     context);
 ```
 
@@ -282,8 +336,8 @@ bool allowed = await RulesetEvaluator.AllowsAsync(
 ```csharp
 var context = new RuleContext
 {
-    // The existing document as a map — convention: { data: {...}, id: "...", __name__: path }
-    // Set to RuleValue.Null when the document does not exist (e.g. for a create).
+    // The existing resource as a map — convention: { data: {...}, id: "...", __name__: path }
+    // Set to RuleValue.Null when the resource does not exist (e.g. for a create).
     Resource = RuleValue.Map(new Dictionary<string, RuleValue>
     {
         ["data"]     = RuleValue.Map(new Dictionary<string, RuleValue>
@@ -298,7 +352,7 @@ var context = new RuleContext
     {
         ["method"]   = RuleValue.String("get"),
         ["auth"]     = RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String("u1") }),
-        // Include "resource" (the post-write doc) for create/update
+        // Include "resource" (the post-write map) for create/update
         ["resource"] = RuleValue.Null,
     }),
 
@@ -313,13 +367,22 @@ var context = new RuleContext
 };
 ```
 
-The evaluator matches the document path against each rule's path pattern, binds the captured segments (e.g. `userId` from `users/{userId}`) as params, then evaluates the condition. It returns `true` if any matching `allow` rule evaluates to `true`; otherwise `false` (default-deny).
+The evaluator matches the path against each rule's path pattern, binds the captured segments (e.g. `userId` from `users/{userId}`) as params, then evaluates the condition. It returns `true` if any matching `allow` rule evaluates to `true`; otherwise `false` (default-deny).
 
 ---
 
 ## Authorizing queries (`list`)
 
 `QueryAnalyzer.Allows` (or `RuleEngine.Allows`) performs static analysis: it proves that the query's constraints are sufficient to satisfy a read rule for every possible result. It never executes the query.
+
+```mermaid
+flowchart TD
+    Q["list query → QueryConstraints<br/>(collection + where-clauses)"] --> P["QueryAnalyzer"]
+    P --> Pr{"Do the constraints provably<br/>satisfy a read rule for<br/>EVERY possible result?"}
+    Pr -->|yes| Allow["Allow the whole query"]
+    Pr -->|no| Reject["Reject ·<br/>client must add constraints"]
+    Allow -. "no per-result filtering" .-> Run["Your store executes the query"]
+```
 
 ```csharp
 using Winche.Rules;
@@ -354,7 +417,7 @@ bool allowed  = QueryAnalyzer.Allows(rules, constrainedQuery, context);  // true
 bool rejected = QueryAnalyzer.Allows(rules, openQuery,        context);  // false — unconstrained, rejected
 ```
 
-A query is allowed only when the analyzer can prove, from the constraints alone, that the condition holds for every document the query could return. An unconstrained query against an owner-filtered rule is always rejected — the client must add the `where` clause.
+A query is allowed only when the analyzer can prove, from the constraints alone, that the condition holds for every resource the query could return. An unconstrained query against an owner-filtered rule is always rejected — the client must add the `where` clause.
 
 The analyzer handles:
 
@@ -370,9 +433,9 @@ The analyzer **rejects** (returns `false`) for any rule or query it cannot prove
 
 ---
 
-## Cross-document conditions (`get` / `exists`)
+## Cross-resource conditions (`get` / `exists`)
 
-Rules can reference other documents via `Expr.Get` and `Expr.Exists`. You back these by implementing `IRuleResourceProvider`:
+Rules can reference **other** resources via `Expr.Get` and `Expr.Exists`. You back these by implementing `IRuleResourceProvider`:
 
 ```csharp
 using Winche.Rules;
@@ -385,11 +448,11 @@ public sealed class MyResourceProvider(IMyStore store) : IRuleResourceProvider
 
     public async Task<RuleValue> GetAsync(string path, CancellationToken ct = default)
     {
-        var doc = await store.GetAsync(path, ct);
-        if (doc is null) return RuleValue.Null;
+        var item = await store.GetAsync(path, ct);
+        if (item is null) return RuleValue.Null;
         return RuleValue.Map(new Dictionary<string, RuleValue>
         {
-            ["data"] = /* convert doc.Fields to RuleValue.Map */,
+            ["data"] = /* convert item.Fields to RuleValue.Map */,
         });
     }
 }
@@ -398,7 +461,7 @@ public sealed class MyResourceProvider(IMyStore store) : IRuleResourceProvider
 Pass an instance as `RuleRequest.Provider` (or `RuleContext.Provider`). When a rule calls `exists(path)` or `get(path)`, the evaluator delegates to this interface. Reads should be scoped to the current request, cached, and capped to prevent unbounded lookups.
 
 ```csharp
-// Rule: allow read if the user's team document is active
+// Rule: allow read if the user's team resource is active
 RuleSet rules = RulesetBuilder.Build(r =>
     r.Match("docs/{id}", d =>
         d.Allow(RuleOperations.Read, Expr.All(
@@ -413,7 +476,7 @@ bool allowed = await engine.AllowsAsync(RuleOperation.Get, "docs/d1", new RuleRe
 });
 ```
 
-Note: `QueryAnalyzer` **always rejects** queries against rules that use `get()`/`exists()` — cross-document lookups cannot be proven statically.
+Note: `QueryAnalyzer` **always rejects** queries against rules that use `get()`/`exists()` — cross-resource lookups cannot be proven statically.
 
 ---
 
@@ -479,7 +542,7 @@ Map field names must not begin with `$` (it is reserved for the tagged-value enc
 
 The engine needs a few adapters, all of which you provide:
 
-1. **Entity → `RuleValue`** — convert each document from your storage type to a `RuleValue.Map` with a `data` key (and optionally `id`, `__name__`). This is pure mapping code; no interface is required.
+1. **Entity → `RuleValue`** — convert each resource from your storage type to a `RuleValue.Map` with a `data` key (and optionally `id`, `__name__`). This is pure mapping code; no interface is required.
 
 2. **Query → `QueryConstraints`** — map each `where` clause of your query to a `QueryConstraint(fieldPath, op, value)` and wrap them in a `QueryConstraints(collection, constraints)`.
 
@@ -487,7 +550,7 @@ The engine needs a few adapters, all of which you provide:
 
 4. **Comparison → `IRuleValueComparer`** *(optional)* — supply one when the engine must match your store's exact equality/ordering semantics.
 
-The engine fits any system that has **documents at paths** and **per-request caller claims**. The caller claims shape is whatever you put in `request.auth`; the conditions reference it with `Expr.Auth(...)`.
+The engine fits any system that has **resources addressed by path** and **per-request caller claims**. The caller claims shape is whatever you put in `request.auth`; the conditions reference it with `Expr.Auth(...)`.
 
 ---
 
