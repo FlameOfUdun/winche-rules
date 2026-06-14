@@ -1,13 +1,15 @@
 namespace Winche.Rules.Matching;
 
-/// <summary>A parsed path-pattern segment.</summary>
+/// <summary>
+/// A parsed path-pattern segment.
+/// </summary>
 internal abstract record PathSegment;
 internal sealed record LiteralSegment(string Value) : PathSegment;
 internal sealed record ParamSegment(string Name) : PathSegment;
-internal sealed record RecursiveSegment(string Name) : PathSegment;   // {name=**}
+internal sealed record RecursiveSegment(string Name) : PathSegment;
 
 /// <summary>
-/// Parses and matches Firestore-style path patterns: literal segments, <c>{id}</c> single-segment captures,
+/// Parses and matches path patterns: literal segments, <c>{id}</c> single-segment captures,
 /// and a trailing <c>{name=**}</c> recursive capture. Captures are exposed as path-param variables.
 /// </summary>
 internal static class PathPattern
@@ -43,7 +45,9 @@ internal static class PathPattern
         return segments;
     }
 
-    /// <summary>Matches a concrete path against a pattern, capturing variables.</summary>
+    /// <summary>
+    /// Matches a concrete path against a pattern, capturing variables.
+    /// </summary>
     public static bool TryMatch(IReadOnlyList<PathSegment> pattern, string path, out Dictionary<string, RuleValue> captures)
     {
         captures = [];
@@ -55,7 +59,7 @@ internal static class PathPattern
             {
                 case RecursiveSegment r:
                     captures[r.Name] = RuleValue.Path(string.Join('/', segs[i..]));
-                    return true;   // consumes the rest (any depth, including zero)
+                    return true;
                 default:
                     if (i >= segs.Length) return false;
                     if (pattern[i] is LiteralSegment lit)
@@ -73,9 +77,6 @@ internal static class PathPattern
         return pattern.Count == segs.Length;   // no recursive wildcard → lengths must match exactly
     }
 
-    // Matches the first prefix.Count segments of path against prefix, capturing ParamSegments.
-    // Returns true iff path has at least prefix.Count segments and each segment matches.
-    // A RecursiveSegment anywhere in prefix causes an immediate false (defensive guard).
     internal static bool TryMatchPrefix(IReadOnlyList<PathSegment> prefix, string path, out Dictionary<string, RuleValue> captures)
     {
         captures = [];
@@ -86,7 +87,7 @@ internal static class PathPattern
             switch (prefix[i])
             {
                 case RecursiveSegment:
-                    return false;   // defensive: prefix must not contain recursive segments
+                    return false;
                 case LiteralSegment lit:
                     if (!string.Equals(lit.Value, segs[i], StringComparison.Ordinal)) return false;
                     break;

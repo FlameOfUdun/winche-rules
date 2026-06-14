@@ -3,7 +3,7 @@ using Winche.Rules.Expressions;
 namespace Winche.Rules;
 
 /// <summary>
-/// Fluent builder for a <see cref="Ruleset"/>:
+/// Fluent builder for a <see cref="RuleSet"/>:
 /// <code>
 /// var rules = RulesetBuilder.Build(r =>
 ///     r.Match("users/{userId}", u =>
@@ -22,12 +22,12 @@ public sealed class RulesetBuilder
     private RulesetBuilder() { }
 
     /// <summary>Builds a ruleset.</summary>
-    public static Ruleset Build(Action<RulesetBuilder> configure)
+    public static RuleSet Build(Action<RulesetBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
         var builder = new RulesetBuilder();
         configure(builder);
-        return new Ruleset(builder._matches);
+        return new RuleSet(builder._matches);
     }
 
     /// <summary>Adds a top-level <c>match</c> block.</summary>
@@ -41,7 +41,9 @@ public sealed class RulesetBuilder
     }
 }
 
-/// <summary>Fluent builder for a <c>match</c> block (allow rules + nested matches).</summary>
+/// <summary>
+/// Fluent builder for a <c>match</c> block (allow rules + nested matches).
+/// </summary>
 public sealed class MatchBuilder
 {
     private readonly string _path;
@@ -50,8 +52,10 @@ public sealed class MatchBuilder
 
     internal MatchBuilder(string path) => _path = path;
 
-    /// <summary>Adds an <c>allow</c> rule granting <paramref name="operations"/> when <paramref name="condition"/> holds.</summary>
-    public MatchBuilder Allow(IEnumerable<RuleOperation> operations, RuleExpr condition)
+    /// <summary>
+    /// Adds an <c>allow</c> rule granting <paramref name="operations"/> when <paramref name="condition"/> holds.
+    /// </summary>
+    public MatchBuilder Allow(IEnumerable<RuleOperation> operations, RuleExpression condition)
     {
         _allow.Add(new AllowRule([.. operations], condition));
         return this;

@@ -15,15 +15,15 @@ public class EvaluatorTests
     private static RuleValue Resource(RuleValue data) => Map(("data", data), ("__name__", RuleValue.Path("c/x")));
     private static RuleValue Auth(string uid) => Map(("uid", RuleValue.String(uid)));
 
-    private static RuleContext Ctx(RuleValue? resource = null, RuleValue? auth = null, IDocumentSource? docs = null) =>
+    private static RuleContext Ctx(RuleValue? resource = null, RuleValue? auth = null, IRuleResourceProvider? docs = null) =>
         new()
         {
             Resource = resource ?? RuleValue.Null,
             Request = Map(("method", RuleValue.String("get")), ("auth", auth ?? RuleValue.Null), ("resource", RuleValue.Null)),
-            Documents = docs,
+            Provider = docs,
         };
 
-    private static Task<bool> Eval(RuleExpr c, RuleContext ctx) => RuleEvaluator.EvaluateAsync(c, ctx);
+    private static Task<bool> Eval(RuleExpression c, RuleContext ctx) => RuleEvaluator.EvaluateAsync(c, ctx);
 
     // ── Core ───────────────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ public class EvaluatorTests
 
     // ── Cross-document get()/exists() ──────────────────────────────────────────
 
-    private sealed class FakeDocs(Dictionary<string, RuleValue> docs) : IDocumentSource
+    private sealed class FakeDocs(Dictionary<string, RuleValue> docs) : IRuleResourceProvider
     {
         public Task<bool> ExistsAsync(string path, CancellationToken ct = default) => Task.FromResult(docs.ContainsKey(path));
         public Task<RuleValue> GetAsync(string path, CancellationToken ct = default) =>

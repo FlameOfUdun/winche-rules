@@ -6,7 +6,7 @@ namespace Winche.Rules.Tests;
 
 public class ExprTests
 {
-    private static void RoundTrips(RuleExpr e) =>
+    private static void RoundTrips(RuleExpression e) =>
         Assert.Equal(e, RuleJson.DeserializeExpr(RuleJson.Serialize(e)));
 
     [Fact]
@@ -33,7 +33,7 @@ public class ExprTests
     {
         RoundTrips(Expr.Resource("data", "age").Ge(Expr.Const(18)));
         RoundTrips(Expr.Auth("uid").In(Expr.Resource("data", "members")));
-        RoundTrips(new ConditionalExpr(Expr.Auth().Ne(Expr.Null), Expr.Const(true), Expr.Const(false)));
+        RoundTrips(new ConditionalExpression(Expr.Auth().Ne(Expr.Null), Expr.Const(true), Expr.Const(false)));
         RoundTrips(Expr.Resource("data", "role").Ne(Expr.Const("banned")).Not());
     }
 

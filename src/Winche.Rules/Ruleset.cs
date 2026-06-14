@@ -4,11 +4,11 @@ namespace Winche.Rules;
 
 /// <summary>
 /// Grants <see cref="Operations"/> when <see cref="Condition"/> evaluates to true. Allow-only: a rule never
-/// denies — it simply doesn't grant — and access is the default-deny OR of all matching rules (Firestore).
+/// denies — it simply doesn't grant — and access is the default-deny OR of all matching rules.
 /// </summary>
 /// <param name="Operations">The operations this rule grants.</param>
 /// <param name="Condition">The condition that must hold to grant.</param>
-public sealed record AllowRule(IReadOnlyList<RuleOperation> Operations, RuleExpr Condition)
+public sealed record AllowRule(IReadOnlyList<RuleOperation> Operations, RuleExpression Condition)
 {
     /// <inheritdoc/>
     public bool Equals(AllowRule? other) =>
@@ -49,9 +49,11 @@ public sealed record MatchBlock(string Path, IReadOnlyList<AllowRule> Allow, IRe
     }
 }
 
-/// <summary>A complete set of rules: the top-level <c>match</c> blocks (rooted at the document path).</summary>
+/// <summary>
+/// A complete set of rules: the top-level <c>match</c> blocks (rooted at the document path).
+/// </summary>
 /// <param name="Matches">The top-level match blocks.</param>
-public sealed record Ruleset(IReadOnlyList<MatchBlock> Matches)
+public sealed record RuleSet(IReadOnlyList<MatchBlock> Matches)
 {
     /// <summary>
     /// Merges multiple rulesets into one by concatenating all of their top-level
@@ -63,28 +65,34 @@ public sealed record Ruleset(IReadOnlyList<MatchBlock> Matches)
     /// An empty <paramref name="rulesets"/> sequence returns an empty (deny-all) ruleset.
     /// </remarks>
     /// <param name="rulesets">The rulesets to merge. Must not be <see langword="null"/>.</param>
-    /// <returns>A new <see cref="Ruleset"/> whose <see cref="Matches"/> is the concatenation
+    /// <returns>A new <see cref="RuleSet"/> whose <see cref="Matches"/> is the concatenation
     /// of all input rulesets' matches.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="rulesets"/> is <see langword="null"/>.
     /// </exception>
-    public static Ruleset Merge(IEnumerable<Ruleset> rulesets)
+    public static RuleSet Merge(IEnumerable<RuleSet> rulesets)
     {
         ArgumentNullException.ThrowIfNull(rulesets);
+
         var merged = new List<MatchBlock>();
+
         foreach (var rs in rulesets)
             merged.AddRange(rs.Matches);
-        return new Ruleset(merged);
+
+        return new RuleSet(merged);
     }
 
     /// <inheritdoc/>
-    public bool Equals(Ruleset? other) => other is not null && Matches.SequenceEqual(other.Matches);
+    public bool Equals(RuleSet? other) => other is not null && Matches.SequenceEqual(other.Matches);
 
     /// <inheritdoc/>
     public override int GetHashCode()
     {
         var hash = new HashCode();
-        foreach (var m in Matches) hash.Add(m);
+
+        foreach (var m in Matches) 
+            hash.Add(m);
+            
         return hash.ToHashCode();
     }
 }

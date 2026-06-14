@@ -1,10 +1,13 @@
 namespace Winche.Rules.Matching;
 
-/// <summary>Flattens a match tree into (accumulated path pattern, allow rule) pairs.</summary>
+internal sealed record FlannetedRule(IReadOnlyList<PathSegment> Pattern, AllowRule Allow);
+
+/// <summary>
+/// Flattens a match tree into (accumulated path pattern, allow rule) pairs.
+/// </summary>
 internal static class RuleFlatten
 {
-    public static IEnumerable<(IReadOnlyList<PathSegment> Pattern, AllowRule Allow)> Flatten(
-        IReadOnlyList<MatchBlock> blocks, IReadOnlyList<PathSegment> prefix)
+    public static IEnumerable<FlannetedRule> Flatten(IReadOnlyList<MatchBlock> blocks, IReadOnlyList<PathSegment> prefix)
     {
         foreach (var block in blocks)
         {
@@ -12,7 +15,7 @@ internal static class RuleFlatten
                 prefix.Count == 0 ? PathPattern.Parse(block.Path) : [.. prefix, .. PathPattern.Parse(block.Path)];
 
             foreach (var allow in block.Allow)
-                yield return (full, allow);
+                yield return new FlannetedRule(full, allow);
 
             foreach (var nested in Flatten(block.Matches, full))
                 yield return nested;

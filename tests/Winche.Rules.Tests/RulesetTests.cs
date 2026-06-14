@@ -19,7 +19,7 @@ public class RulesetTests
         }),
     };
 
-    private static Task<bool> Allows(Ruleset rs, RuleOperation op, string path, string? uid) =>
+    private static Task<bool> Allows(RuleSet rs, RuleOperation op, string path, string? uid) =>
         RulesetEvaluator.AllowsAsync(rs, op, path, Ctx(uid));
 
     // ── Path-param condition ────────────────────────────────────────────────
@@ -84,7 +84,7 @@ public class RulesetTests
     [Fact]
     public void Merge_EmptySequence_ReturnsEmptyRuleset()
     {
-        var result = Ruleset.Merge([]);
+        var result = RuleSet.Merge([]);
         Assert.Empty(result.Matches);
     }
 
@@ -95,7 +95,7 @@ public class RulesetTests
             r.Match("users/{userId}", u =>
                 u.Allow(RuleOperations.Read, Expr.Const(true))));
 
-        var result = Ruleset.Merge([rs]);
+        var result = RuleSet.Merge([rs]);
         Assert.Equal(rs.Matches, result.Matches);
     }
 
@@ -107,7 +107,7 @@ public class RulesetTests
         var rs2 = RulesetBuilder.Build(r =>
             r.Match("beta/{id}", b => b.Allow(RuleOperations.Read, Expr.Const(true))));
 
-        var merged = Ruleset.Merge([rs1, rs2]);
+        var merged = RuleSet.Merge([rs1, rs2]);
 
         // All blocks from both rulesets are present
         Assert.Equal(rs1.Matches.Count + rs2.Matches.Count, merged.Matches.Count);
@@ -122,7 +122,7 @@ public class RulesetTests
     [Fact]
     public void Merge_NullArgument_ThrowsArgumentNullException()
     {
-        Assert.Throws<ArgumentNullException>(() => Ruleset.Merge(null!));
+        Assert.Throws<ArgumentNullException>(() => RuleSet.Merge(null!));
     }
 
     // ── JSON round-trip ──────────────────────────────────────────────────────

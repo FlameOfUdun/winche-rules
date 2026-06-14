@@ -9,19 +9,33 @@ namespace Winche.Rules.Evaluation;
 /// </summary>
 public sealed class RuleContext
 {
-    /// <summary>The empty parameter set.</summary>
-    public static readonly IReadOnlyDictionary<string, RuleValue> NoParams =
-        new ReadOnlyDictionary<string, RuleValue>(new Dictionary<string, RuleValue>());
+    /// <summary>
+    /// The empty parameter set.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, RuleValue> NoParams = new ReadOnlyDictionary<string, RuleValue>(new Dictionary<string, RuleValue>());
 
-    /// <summary>The existing document (typically a map <c>{data, id, __name__}</c>), or <see cref="RuleValue.Null"/>.</summary>
+    /// <summary>
+    /// The existing document (typically a map <c>{data, id, __name__}</c>), or <see cref="RuleValue.Null"/>.
+    /// </summary>
     public RuleValue Resource { get; init; } = RuleValue.Null;
 
-    /// <summary>The request (a map with <c>auth</c>, <c>resource</c>, <c>time</c>, <c>method</c>, …).</summary>
+    /// <summary>
+    /// The request (a map with <c>auth</c>, <c>resource</c>, <c>time</c>, <c>method</c>, …).
+    /// </summary>
     public RuleValue Request { get; init; } = RuleValue.Null;
 
-    /// <summary>Path-pattern captures (e.g. <c>userId</c> from <c>users/{userId}</c>).</summary>
+    /// <summary>
+    /// Path-pattern captures (e.g. <c>userId</c> from <c>users/{userId}</c>).
+    /// </summary>
     public IReadOnlyDictionary<string, RuleValue> Params { get; init; } = NoParams;
 
-    /// <summary>Backs <c>get()</c>/<c>exists()</c>; may be <c>null</c> when no rule uses them.</summary>
-    public IDocumentSource? Documents { get; init; }
+    /// <summary>
+    /// Backs <c>get()</c>/<c>exists()</c>; may be <c>null</c> when no rule uses them.
+    /// </summary>
+    public IRuleResourceProvider? Provider { get; init; }
+
+    /// <summary>
+    /// The comparer used for equality/ordering; defaults to <see cref="DefaultRuleValueComparer"/>.
+    /// </summary>
+    public IRuleValueComparer Comparer { get; init; } = DefaultRuleValueComparer.Instance;
 }
