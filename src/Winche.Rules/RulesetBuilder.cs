@@ -1,4 +1,5 @@
 using Winche.Rules.Expressions;
+using Winche.Rules.Matching;
 
 namespace Winche.Rules;
 
@@ -71,5 +72,16 @@ public sealed class MatchBuilder
         return this;
     }
 
-    internal MatchBlock Build() => new(_path, _allow, _matches);
+    internal MatchBlock Build()
+    {
+        // Fail fast: validate the (relative) path pattern at build time rather than at evaluation.
+        var parsed = PathPattern.Parse(_path);
+        // A recursive wildcard consumes the rest of the path, so nested matches under it can never
+        // be reached. Reject rather than silently producing dead rules (Firestore disallows this).
+        if (_matches.Count > 0 && parsed[^1] is RecursiveSegment)
+            throw new ArgumentException(
+                $"match '{_path}' ends in a recursive wildcard and cannot contain nested matches; " +
+                "nested rules would be unreachable.");
+        return new(_path, _allow, _matches);
+    }
 }

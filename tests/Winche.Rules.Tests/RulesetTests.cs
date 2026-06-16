@@ -68,6 +68,17 @@ public class RulesetTests
         Assert.False(await Allows(rs, RuleOperation.Get, "other/a", "x"));   // different collection → default-deny
     }
 
+    [Fact]
+    public async Task RecursiveWildcard_DoesNotMatchBareCollection()
+    {
+        var rs = RulesetBuilder.Build(r =>
+            r.Match("files/{path=**}", m => m.Allow(RuleOperations.Read, Expr.Const(true))));
+
+        Assert.True(await Allows(rs, RuleOperation.Get, "files/a", "x"));       // 1 segment under → matches
+        Assert.True(await Allows(rs, RuleOperation.Get, "files/a/b/c", "x"));   // deep → matches
+        Assert.False(await Allows(rs, RuleOperation.Get, "files", "x"));        // 0 segments under → no match (Firestore: 1+)
+    }
+
     // ── Default-deny ────────────────────────────────────────────────────────
 
     [Fact]
