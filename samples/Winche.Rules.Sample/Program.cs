@@ -15,12 +15,12 @@ using Winche.Rules.Querying;
 // no restart, through the built-in IRuleSetRepository seam.
 // =============================================================================
 
-// ----- Rulesets --------------------------------------------------------------
+// ----- RuleSets --------------------------------------------------------------
 
 // "documents": owners can always read/write their own doc. Public reads are only
 // allowed in v2 — we start on v1 (owner-only) and hot-swap to v2 later.
 // "reports/{id}" shows a cross-resource condition backed by IRuleResourceProvider.
-static RuleSet DocumentsRules(bool allowPublicReads) => RulesetBuilder.Build(r =>
+static RuleSet DocumentsRules(bool allowPublicReads) => RuleSetBuilder.Build(r =>
 {
     r.Match("documents/{docId}", d =>
     {
@@ -40,7 +40,7 @@ static RuleSet DocumentsRules(bool allowPublicReads) => RulesetBuilder.Build(r =
 
 // "orders": a shipped order is readable. Its engine uses a case-insensitive
 // comparer, so the rule's "SHIPPED" matches a resource whose status is "shipped".
-static RuleSet OrdersRules() => RulesetBuilder.Build(r =>
+static RuleSet OrdersRules() => RuleSetBuilder.Build(r =>
     r.Match("orders/{orderId}", o =>
         o.Allow(RuleOperations.Read, Expr.Resource("status").Eq(Expr.Const("SHIPPED")))));
 
@@ -51,7 +51,7 @@ var services = new ServiceCollection();
 // One isolated, hot-swappable engine per resource type. Each has its own ruleset,
 // its own comparer, and its own IMutableRuleSetRepository — keys are never merged.
 services.AddWincheRules("documents", o => o.WithMutableRuleSetRepository(DocumentsRules(allowPublicReads: false)));
-services.AddWincheRules("orders", o => o.WithMutableRuleSetRepository(OrdersRules()).WithValueComparer(new CaseInsensitiveComparer()));
+services.AddWincheRules("orders", o => o.WithMutableRuleSetRepository(OrdersRules()).WithRuleValueComparer(new CaseInsensitiveComparer()));
 
 using var sp = services.BuildServiceProvider();
 
@@ -141,7 +141,7 @@ Section("5. Rules as data — JSON serialize/deserialize round-trip");
 var json = RuleJson.Serialize(OrdersRules());
 Console.WriteLine("   orders ruleset as JSON:");
 Console.WriteLine("   " + json);
-var restored = RuleJson.DeserializeRuleset(json);
+var restored = RuleJson.DeserializeRuleSet(json);
 Show("deserialized ruleset equals the original", restored.Equals(OrdersRules()));
 
 // ----- 6. Per-type comparer --------------------------------------------------

@@ -6,11 +6,11 @@ namespace Winche.Rules.Tests;
 
 public class MutableRuleSetRepositoryTests
 {
-    private static RuleSet Set(string path) => RulesetBuilder.Build(r =>
+    private static RuleSet Set(string path) => RuleSetBuilder.Build(r =>
         r.Match(path, m => m.Allow(RuleOperations.Read, new LiteralExpression(RuleValue.Bool(true)))));
 
     [Fact]
-    public void Current_ReturnsInitialRuleset()
+    public void Current_ReturnsInitialRuleSet()
     {
         var initial = Set("a/{id}");
         var repo = new MutableRuleSetRepository(initial);
@@ -18,7 +18,7 @@ public class MutableRuleSetRepositoryTests
     }
 
     [Fact]
-    public void Update_ReplacesCurrentRuleset()
+    public void Update_ReplacesCurrentRuleSet()
     {
         var repo = new MutableRuleSetRepository(Set("a/{id}"));
         var next = Set("b/{id}");

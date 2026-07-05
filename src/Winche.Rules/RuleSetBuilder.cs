@@ -6,7 +6,7 @@ namespace Winche.Rules;
 /// <summary>
 /// Fluent builder for a <see cref="RuleSet"/>:
 /// <code>
-/// var rules = RulesetBuilder.Build(r =>
+/// var rules = RuleSetBuilder.Build(r =>
 ///     r.Match("users/{userId}", u =>
 ///     {
 ///         u.Allow(RuleOperations.Read, Expr.Auth("uid").Eq(Expr.Param("userId")));
@@ -16,23 +16,23 @@ namespace Winche.Rules;
 ///     }));
 /// </code>
 /// </summary>
-public sealed class RulesetBuilder
+public sealed class RuleSetBuilder
 {
     private readonly List<MatchBlock> _matches = [];
 
-    private RulesetBuilder() { }
+    private RuleSetBuilder() { }
 
     /// <summary>Builds a ruleset.</summary>
-    public static RuleSet Build(Action<RulesetBuilder> configure)
+    public static RuleSet Build(Action<RuleSetBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
-        var builder = new RulesetBuilder();
+        var builder = new RuleSetBuilder();
         configure(builder);
         return new RuleSet(builder._matches);
     }
 
     /// <summary>Adds a top-level <c>match</c> block.</summary>
-    public RulesetBuilder Match(string path, Action<MatchBuilder> configure)
+    public RuleSetBuilder Match(string path, Action<MatchBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
         var match = new MatchBuilder(path);

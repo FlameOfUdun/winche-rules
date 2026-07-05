@@ -13,7 +13,7 @@ public class RuleEngineTests
         public bool TryCompare(RuleValue a, RuleValue b, out int r) { r = 0; return true; }
     }
 
-    private static RuleSet OwnerRule() => RulesetBuilder.Build(r =>
+    private static RuleSet OwnerRule() => RuleSetBuilder.Build(r =>
         r.Match("docs/{id}", m => m.Allow(RuleOperations.Read,
             new CompareExpression(
                 new MemberExpression(new MemberExpression(new VarExpression("resource"), "data"), "x"),

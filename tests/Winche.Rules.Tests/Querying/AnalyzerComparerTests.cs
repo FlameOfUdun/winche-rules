@@ -18,7 +18,7 @@ public class AnalyzerComparerTests
     public void Analyzer_UsesContextComparer_ForAtomProof()
     {
         // rule: allow list if resource.ownerId == "X"
-        var ruleset = RulesetBuilder.Build(r =>
+        var ruleset = RuleSetBuilder.Build(r =>
             r.Match("docs/{id}", m => m.Allow(RuleOperations.Read,
                 new CompareExpression(
                     new MemberExpression(new VarExpression("resource"), "ownerId"),

@@ -10,7 +10,7 @@ public class RuleEngineHotSwapTests
 {
     private static RuleSet DenyAll() => new(new List<MatchBlock>());
 
-    private static RuleSet AllowReadDocs() => RulesetBuilder.Build(r =>
+    private static RuleSet AllowReadDocs() => RuleSetBuilder.Build(r =>
         r.Match("docs/{id}", m => m.Allow(RuleOperations.Read, new LiteralExpression(RuleValue.Bool(true)))));
 
     [Fact]

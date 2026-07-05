@@ -32,7 +32,7 @@ public sealed class RuleEngine
 
     /// <summary>Whether <paramref name="operation"/> on the document at <paramref name="documentPath"/> is allowed.</summary>
     public Task<bool> AllowsAsync(RuleOperation operation, string documentPath, RuleRequest request, CancellationToken ct = default)
-        => RulesetEvaluator.AllowsAsync(_repository.Current, operation, documentPath, request.ToContext(_comparer), ct);
+        => RuleSetEvaluator.AllowsAsync(_repository.Current, operation, documentPath, request.ToContext(_comparer), ct);
 
     /// <summary>Whether the list <paramref name="query"/> is provably safe under the read rules.</summary>
     public bool Allows(QueryConstraints query, RuleRequest request)

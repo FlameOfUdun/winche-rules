@@ -14,7 +14,7 @@ public class ServiceCollectionExtensionsTests
         public bool TryCompare(RuleValue a, RuleValue b, out int r) { r = 0; return true; }
     }
 
-    private static RuleSet AllowRead(string path) => RulesetBuilder.Build(r =>
+    private static RuleSet AllowRead(string path) => RuleSetBuilder.Build(r =>
         r.Match(path, m => m.Allow(RuleOperations.Read, new LiteralExpression(RuleValue.Bool(true)))));
 
     [Fact]
@@ -80,12 +80,12 @@ public class ServiceCollectionExtensionsTests
     [Fact]
     public async Task AddWincheRules_Keyed_UsesPerKeyComparer()
     {
-        var rule = RulesetBuilder.Build(r => r.Match("docs/{id}", m => m.Allow(RuleOperations.Read,
+        var rule = RuleSetBuilder.Build(r => r.Match("docs/{id}", m => m.Allow(RuleOperations.Read,
             new CompareExpression(new MemberExpression(new VarExpression("resource"), "x"),
                 ComparisonOperator.Eq, new LiteralExpression(RuleValue.String("Y"))))));
 
         var services = new ServiceCollection();
-        services.AddWincheRules("loose", o => o.WithMutableRuleSetRepository(rule).WithValueComparer(new AlwaysEqual()));
+        services.AddWincheRules("loose", o => o.WithMutableRuleSetRepository(rule).WithRuleValueComparer(new AlwaysEqual()));
         services.AddWincheRules("strict", o => o.WithMutableRuleSetRepository(rule));   // default comparer
 
         using var sp = services.BuildServiceProvider();

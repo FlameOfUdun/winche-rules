@@ -29,7 +29,7 @@ public class QueryAnalyzerTests
     [Fact]
     public void Owner_AllowsConstrainedQuery_RejectsUnconstrained()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u =>
                 u.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
 
@@ -44,7 +44,7 @@ public class QueryAnalyzerTests
     [Fact]
     public void PublicOrOwner()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("docs/{id}", d => d.Allow(RuleOperations.Read, Expr.Any(
                 Expr.Resource("isPublic").Eq(true),
                 Expr.Resource("ownerId").Eq(Expr.Auth("uid"))))));
@@ -60,7 +60,7 @@ public class QueryAnalyzerTests
     [Fact]
     public void AlwaysTrueRule_AllowsAnyQuery()
     {
-        var rs = RulesetBuilder.Build(r => r.Match("pub/{id}", d => d.Allow(RuleOperations.Read, Expr.Const(true))));
+        var rs = RuleSetBuilder.Build(r => r.Match("pub/{id}", d => d.Allow(RuleOperations.Read, Expr.Const(true))));
         Assert.True(Allows(rs, Q("pub"), uid: null));
     }
 
@@ -69,7 +69,7 @@ public class QueryAnalyzerTests
     [Fact]
     public void Range_ExactAndEqualityPinProve_WeakerRejected()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("people/{id}", d => d.Allow(RuleOperations.Read, Expr.Resource("age").Ge(Expr.Const(18)))));
 
         Assert.True(Allows(rs, Q("people", C("age", ComparisonOperator.Ge, RuleValue.Int(18))), "x"));   // exact
@@ -83,7 +83,7 @@ public class QueryAnalyzerTests
     [Fact]
     public void GetExistsRule_IsRejectedForLists()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("docs/{id}", d => d.Allow(RuleOperations.Read, Expr.Exists(Expr.Const("teams/t")))));
         Assert.False(Allows(rs, Q("docs", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));
     }
@@ -92,7 +92,7 @@ public class QueryAnalyzerTests
     public void PerResultWildcardRule_CannotBeProvenForLists()
     {
         // allow read: if request.auth.uid == userId  — fine for GET, but a LIST can't prove the per-doc id.
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u => u.Allow(RuleOperations.Read, Expr.Auth("uid").Eq(Expr.Param("userId")))));
         Assert.False(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));
     }
@@ -102,7 +102,7 @@ public class QueryAnalyzerTests
     [Fact]
     public void Subcollection_BindsParentWildcard()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u =>
                 u.Match("posts/{postId}", p =>
                     p.Allow(RuleOperations.Read, Expr.Resource("authorId").Eq(Expr.Param("userId"))))));
@@ -117,7 +117,7 @@ public class QueryAnalyzerTests
     [Fact]
     public void UnrelatedCollection_Rejected()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u => u.Allow(RuleOperations.Read, Expr.Const(true))));
         Assert.False(Allows(rs, Q("orders"), "u1"));
     }
@@ -128,7 +128,7 @@ public class QueryAnalyzerTests
     public void CatchAll_RecursiveLeaf_GovernsAnyCollection()
     {
         // match /{document=**} with allow read: true — governs every collection at any depth.
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("{document=**}", b => b.Allow(RuleOperations.Read, Expr.Const(true))));
 
         Assert.True(Allows(rs, Q("foo"), uid: null));
@@ -140,7 +140,7 @@ public class QueryAnalyzerTests
     public void RecursiveLeaf_WithPrefix_GovernsSubcollections()
     {
         // match /users/{doc=**} — governs "users" itself and any subcollection under "users".
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{doc=**}", b =>
                 b.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
 
@@ -158,7 +158,7 @@ public class QueryAnalyzerTests
     public void RecursiveLeaf_IntermediateParamCapture_BoundInCondition()
     {
         // match /orgs/{orgId}/{doc=**} — orgId is captured from the second collection segment.
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("orgs/{orgId}/{doc=**}", b =>
                 b.Allow(RuleOperations.Read, Expr.Resource("org").Eq(Expr.Param("orgId")))));
 

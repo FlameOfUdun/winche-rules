@@ -24,7 +24,7 @@ public sealed record WincheRulesOptions
     /// </summary>
     /// <param name="value">The comparer to use for rule evaluation.</param>
     /// <returns>The current <see cref="WincheRulesOptions"/> instance.</returns>
-    public WincheRulesOptions WithValueComparer(IRuleValueComparer value)
+    public WincheRulesOptions WithRuleValueComparer(IRuleValueComparer value)
     {
         ArgumentNullException.ThrowIfNull(value);
         Comparer = value;

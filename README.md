@@ -103,11 +103,11 @@ Numbers compare across `Int`/`Double` by numeric value. Comparison across other 
 
 ---
 
-## Defining rules (`RulesetBuilder` + `Expr`)
+## Defining rules (`RuleSetBuilder` + `Expr`)
 
-### RulesetBuilder
+### RuleSetBuilder
 
-Rules are built with the fluent `RulesetBuilder.Build` API, which returns a `RuleSet`. Each `Match` takes a path pattern and a configuration callback. Patterns support:
+Rules are built with the fluent `RuleSetBuilder.Build` API, which returns a `RuleSet`. Each `Match` takes a path pattern and a configuration callback. Patterns support:
 
 - **Literal segments** — `users`
 - **Single-segment capture** — `{userId}` (binds one path segment to a param)
@@ -119,7 +119,7 @@ Rules are built with the fluent `RulesetBuilder.Build` API, which returns a `Rul
 using Winche.Rules;
 using Winche.Rules.Expressions;
 
-RuleSet rules = RulesetBuilder.Build(r =>
+RuleSet rules = RuleSetBuilder.Build(r =>
     r.Match("users/{userId}", u =>
     {
         // Owner can read their own resource
@@ -264,7 +264,7 @@ bool listAllowed = engine.Allows(constraints, new RuleRequest { Request = /* req
 
 The comparer is supplied by the engine, so it is intentionally **not** a field of `RuleRequest`.
 
-> The static entry points `RulesetEvaluator.AllowsAsync` and `QueryAnalyzer.Allows` (which take a `RuleContext`) remain available as a lower-level API — `RuleEngine` is a thin facade over them. See [Evaluating single-resource operations](#evaluating-single-resource-operations).
+> The static entry points `RuleSetEvaluator.AllowsAsync` and `QueryAnalyzer.Allows` (which take a `RuleContext`) remain available as a lower-level API — `RuleEngine` is a thin facade over them. See [Evaluating single-resource operations](#evaluating-single-resource-operations).
 
 ---
 
@@ -275,25 +275,25 @@ The `Winche.Rules.DependencyInjection` namespace registers a configured `RuleEng
 ```csharp
 using Winche.Rules.DependencyInjection;
 
-var ruleset = RulesetBuilder.Build(r => r.Match("users/{userId}", u =>
+var ruleset = RuleSetBuilder.Build(r => r.Match("users/{userId}", u =>
     u.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
 
 services.AddWincheRules(o => o
     .WithMutableRuleSetRepository(ruleset)   // hot-swappable; or WithStaticRuleSetRepository(ruleset) for a frozen engine
-    // .WithValueComparer(myComparer)        // optional; defaults to DefaultRuleValueComparer
+    // .WithRuleValueComparer(myComparer)        // optional; defaults to DefaultRuleValueComparer
 );
 
 // elsewhere
 var engine = provider.GetRequiredService<RuleEngine>();
 ```
 
-`WincheRulesOptions` is a fluent builder: `WithMutableRuleSetRepository(RuleSet?)` (hot-swappable), `WithStaticRuleSetRepository(RuleSet)` (frozen), `WithRuleSetRepository(IRuleSetRepository)` (your own source), and `WithValueComparer(IRuleValueComparer)`. The non-keyed overload registers a single `RuleEngine` over the configured repository and comparer (no cross-ruleset merge); it is registered with `TryAddSingleton`. If the repository is mutable, its `IMutableRuleSetRepository` write side is registered too, so you can hot-swap even the non-keyed engine.
+`WincheRulesOptions` is a fluent builder: `WithMutableRuleSetRepository(RuleSet?)` (hot-swappable), `WithStaticRuleSetRepository(RuleSet)` (frozen), `WithRuleSetRepository(IRuleSetRepository)` (your own source), and `WithRuleValueComparer(IRuleValueComparer)`. The non-keyed overload registers a single `RuleEngine` over the configured repository and comparer (no cross-ruleset merge); it is registered with `TryAddSingleton`. If the repository is mutable, its `IMutableRuleSetRepository` write side is registered too, so you can hot-swap even the non-keyed engine.
 
 > For **per-type isolation** — one independent engine per resource type — use the keyed overload `AddWincheRules(serviceKey, …)` — see [Hot-swapping rules at runtime](#hot-swapping-rules-at-runtime). Keyed registrations are **never** merged: each key is an independent engine with its own ruleset and comparer.
 
 ```mermaid
 flowchart LR
-    A["AddWincheRules(o =><br/>o.WithMutableRuleSetRepository(...)<br/>.WithValueComparer(...))"] --> RS[("IRuleSetRepository<br/>+ IRuleValueComparer")]
+    A["AddWincheRules(o =><br/>o.WithMutableRuleSetRepository(...)<br/>.WithRuleValueComparer(...))"] --> RS[("IRuleSetRepository<br/>+ IRuleValueComparer")]
     A --> RE["RuleEngine<br/>singleton"]
     RS --> RE
     RE --> App["Resolved by your services"]
@@ -339,16 +339,16 @@ with its own ruleset, its own `IRuleValueComparer`, and (when mutable) its own `
 using Microsoft.Extensions.DependencyInjection;
 using Winche.Rules.DependencyInjection;
 
-var documentsRules = RulesetBuilder.Build(r => r.Match("documents/{id}", d =>
+var documentsRules = RuleSetBuilder.Build(r => r.Match("documents/{id}", d =>
     d.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
 
 services.AddWincheRules("documents", o => o
     .WithMutableRuleSetRepository(documentsRules)
-    .WithValueComparer(documentsComparer));
+    .WithRuleValueComparer(documentsComparer));
 
 services.AddWincheRules("orders", o => o
     .WithMutableRuleSetRepository(ordersRules)
-    .WithValueComparer(ordersComparer));       // a different comparer per type
+    .WithRuleValueComparer(ordersComparer));       // a different comparer per type
 
 // Evaluate — inject the engine for a type by key:
 public sealed class DocumentService([FromKeyedServices("documents")] RuleEngine engine) { /* ... */ }
@@ -393,7 +393,7 @@ flowchart LR
 
 ## Evaluating single-resource operations
 
-The lower-level static API for `get`, `create`, `update`, and `delete` is `RulesetEvaluator.AllowsAsync`, which takes a `RuleContext` (the comparer is a field of the context here). For `list` (queries), use `QueryAnalyzer` instead (see the next section).
+The lower-level static API for `get`, `create`, `update`, and `delete` is `RuleSetEvaluator.AllowsAsync`, which takes a `RuleContext` (the comparer is a field of the context here). For `list` (queries), use `QueryAnalyzer` instead (see the next section).
 
 ```mermaid
 flowchart TD
@@ -414,7 +414,7 @@ flowchart TD
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 
-bool allowed = await RulesetEvaluator.AllowsAsync(
+bool allowed = await RuleSetEvaluator.AllowsAsync(
     rules,
     RuleOperation.Get,
     "users/u1",         // the full path being accessed
@@ -479,7 +479,7 @@ using Winche.Rules.Expressions;
 using Winche.Rules.Querying;
 
 // Rule: allow read if resource.ownerId == request.auth.uid
-RuleSet rules = RulesetBuilder.Build(r =>
+RuleSet rules = RuleSetBuilder.Build(r =>
     r.Match("users/{userId}", u =>
         u.Allow(RuleOperations.Read,
             Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
@@ -547,7 +547,7 @@ Pass an instance as `RuleRequest.Provider` (or `RuleContext.Provider`). When a r
 
 ```csharp
 // Rule: allow read if the user's team resource is active
-RuleSet rules = RulesetBuilder.Build(r =>
+RuleSet rules = RuleSetBuilder.Build(r =>
     r.Match("docs/{id}", d =>
         d.Allow(RuleOperations.Read, Expr.All(
             Expr.Exists(Expr.Const("teams/t1")),
@@ -581,13 +581,13 @@ public interface IRuleValueComparer
 
 `new DefaultRuleValueComparer()` is used when you don't supply one: numbers compare across `Int`/`Double`; strings/paths use ordinal order; un-orderable kind pairs (null/list/map, or mixed kinds) return `false`.
 
-Supply your own — via `new RuleEngine(repository, myComparer)`, `RuleContext.Comparer`, or `WincheRulesOptions.WithValueComparer(...)` — when the engine must agree with a host system's comparison rules. This matters most for `QueryAnalyzer`: its "provably safe" proof is only valid if it compares values the same way your store executes the query.
+Supply your own — via `new RuleEngine(repository, myComparer)`, `RuleContext.Comparer`, or `WincheRulesOptions.WithRuleValueComparer(...)` — when the engine must agree with a host system's comparison rules. This matters most for `QueryAnalyzer`: its "provably safe" proof is only valid if it compares values the same way your store executes the query.
 
 ---
 
 ## Rules as data (JSON)
 
-Rulesets and expressions are fully serializable. Use `RuleJson` for round-trips:
+RuleSets and expressions are fully serializable. Use `RuleJson` for round-trips:
 
 ```csharp
 using Winche.Rules;
@@ -597,7 +597,7 @@ using Winche.Rules.Json;
 string json = RuleJson.Serialize(rules);
 
 // Deserialize
-RuleSet restored = RuleJson.DeserializeRuleset(json);
+RuleSet restored = RuleJson.DeserializeRuleSet(json);
 
 // Expression round-trip
 string exprJson          = RuleJson.Serialize(Expr.Resource("ownerId").Eq(Expr.Auth("uid")));
@@ -644,7 +644,7 @@ The engine fits any system that has **resources addressed by path** and **per-re
 `RuleSet.Merge` concatenates the match blocks from multiple rulesets into one. Because evaluation uses OR/default-deny semantics, block order does not affect the authorization decision — a request is allowed if any block grants it.
 
 ```csharp
-var merged = RuleSet.Merge([usersRuleset, ordersRuleset, adminRuleset]);
+var merged = RuleSet.Merge([usersRuleSet, ordersRuleSet, adminRuleSet]);
 
 // An empty sequence returns a deny-all ruleset
 var denyAll = RuleSet.Merge([]);
@@ -667,14 +667,14 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 | `AllowRule` | `(IReadOnlyList<RuleOperation> Operations, RuleExpression Condition)` |
 | `RuleOperation` | Enum: `Get`, `List`, `Create`, `Update`, `Delete`. |
 | `RuleOperations` | Static sets: `Read`, `Write`, `All`, `Of(params RuleOperation[])`. |
-| `RulesetBuilder` | `static Build(Action<RulesetBuilder>)` → `RuleSet`, plus `Match(path, configure)`. |
+| `RuleSetBuilder` | `static Build(Action<RuleSetBuilder>)` → `RuleSet`, plus `Match(path, configure)`. |
 | `MatchBuilder` | `Allow(IEnumerable<RuleOperation>, RuleExpression)` + `Match(path, configure)`. |
 | `RuleEngine` | `RuleEngine(IRuleSetRepository, IRuleValueComparer)`. `Task<bool> AllowsAsync(RuleOperation, string path, RuleRequest, CancellationToken)`; `bool Allows(QueryConstraints, RuleRequest)`. Reads the ruleset from the repository per call. |
 | `IRuleSetRepository` | Read side of the ruleset seam: `RuleSet Current { get; }`. |
 | `IMutableRuleSetRepository` | Write side: `IRuleSetRepository` + `void Update(RuleSet)`. |
 | `MutableRuleSetRepository` | Hot-swappable `IMutableRuleSetRepository`: `MutableRuleSetRepository(RuleSet?)`, lock-free atomic swap. |
 | `StaticRuleSetRepository` | Immutable `IRuleSetRepository`: `StaticRuleSetRepository(RuleSet)` — a frozen engine. |
-| `RulesetEvaluator` | Low-level: `static Task<bool> AllowsAsync(RuleSet, RuleOperation, string path, RuleContext, CancellationToken)`. |
+| `RuleSetEvaluator` | Low-level: `static Task<bool> AllowsAsync(RuleSet, RuleOperation, string path, RuleContext, CancellationToken)`. |
 
 ### `Winche.Rules.Expressions`
 
@@ -721,7 +721,7 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 
 | Type | Role |
 | - | - |
-| `RuleJson` | `Serialize(RuleExpression)`, `DeserializeExpr(string)`, `Serialize(RuleSet)`, `DeserializeRuleset(string)`. `static JsonSerializerOptions Options`. |
+| `RuleJson` | `Serialize(RuleExpression)`, `DeserializeExpr(string)`, `Serialize(RuleSet)`, `DeserializeRuleSet(string)`. `static JsonSerializerOptions Options`. |
 | `RuleValueJsonConverter` | `System.Text.Json` converter for `RuleValue`; applied automatically via `[JsonConverter]`. |
 
 ### `Winche.Rules.DependencyInjection`
@@ -729,7 +729,7 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 | Type | Role |
 | - | - |
 | `ServiceCollectionExtensions` | `AddWincheRules(this IServiceCollection, Action<WincheRulesOptions>)` — one non-keyed singleton `RuleEngine`. `AddWincheRules(this IServiceCollection, object serviceKey, Action<WincheRulesOptions>)` — one isolated keyed engine per type. |
-| `WincheRulesOptions` | Fluent: `WithMutableRuleSetRepository(RuleSet?)`, `WithStaticRuleSetRepository(RuleSet)`, `WithRuleSetRepository(IRuleSetRepository)`, `WithValueComparer(IRuleValueComparer)`. |
+| `WincheRulesOptions` | Fluent: `WithMutableRuleSetRepository(RuleSet?)`, `WithStaticRuleSetRepository(RuleSet)`, `WithRuleSetRepository(IRuleSetRepository)`, `WithRuleValueComparer(IRuleValueComparer)`. |
 
 ---
 
