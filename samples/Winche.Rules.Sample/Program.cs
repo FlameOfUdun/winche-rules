@@ -12,7 +12,7 @@ using Winche.Rules.Querying;
 // Demonstrates: keyed per-type engines, single-resource evaluation, query
 // authorization, cross-resource get()/exists(), rules-as-data (JSON), per-type
 // comparers, and — the headline — hot-swapping a type's rules at runtime with
-// no restart, through the built-in IRuleRepository seam.
+// no restart, through the built-in IRuleSetRepository seam.
 // =============================================================================
 
 // ----- Rulesets --------------------------------------------------------------
@@ -49,9 +49,9 @@ static RuleSet OrdersRules() => RulesetBuilder.Build(r =>
 var services = new ServiceCollection();
 
 // One isolated, hot-swappable engine per resource type. Each has its own ruleset,
-// its own comparer, and its own IMutableRuleRepository — keys are never merged.
-services.AddWincheRules("documents", o => o.WithRuleset(DocumentsRules(allowPublicReads: false)));
-services.AddWincheRules("orders", o => o.WithRuleset(OrdersRules()).WithComparer(new CaseInsensitiveComparer()));
+// its own comparer, and its own IMutableRuleSetRepository — keys are never merged.
+services.AddWincheRules("documents", o => o.WithMutableRuleSetRepository(DocumentsRules(allowPublicReads: false)));
+services.AddWincheRules("orders", o => o.WithMutableRuleSetRepository(OrdersRules()).WithValueComparer(new CaseInsensitiveComparer()));
 
 using var sp = services.BuildServiceProvider();
 
@@ -85,8 +85,8 @@ Show("mallory creates a doc owned by alice (denied)",
 
 Section("2. Hot-swap the documents ruleset at runtime (v1 -> v2)");
 
-var documentsRepo = sp.GetRequiredKeyedService<IMutableRuleRepository>("documents");
-Console.WriteLine("   ... swapping in v2 (owner OR public) via IMutableRuleRepository.Update()");
+var documentsRepo = sp.GetRequiredKeyedService<IMutableRuleSetRepository>("documents");
+Console.WriteLine("   ... swapping in v2 (owner OR public) via IMutableRuleSetRepository.Update()");
 documentsRepo.Update(DocumentsRules(allowPublicReads: true));
 
 Show("bob reads alice's PUBLIC doc (NOW allowed — same engine, new rules)",
@@ -215,7 +215,7 @@ internal sealed class CaseInsensitiveComparer : IRuleValueComparer
     {
         if (a.Kind == RuleValueKind.String && b.Kind == RuleValueKind.String)
             return string.Equals(a.AsString, b.AsString, StringComparison.OrdinalIgnoreCase);
-        return DefaultRuleValueComparer.Instance.AreEqual(a, b);
+        return a.Equals(b);
     }
 
     public bool TryCompare(RuleValue a, RuleValue b, out int result)
@@ -225,7 +225,7 @@ internal sealed class CaseInsensitiveComparer : IRuleValueComparer
             result = string.Compare(a.AsString, b.AsString, StringComparison.OrdinalIgnoreCase);
             return true;
         }
-        return DefaultRuleValueComparer.Instance.TryCompare(a, b, out result);
+        return a.TryCompareTo(b, out result);
     }
 }
 

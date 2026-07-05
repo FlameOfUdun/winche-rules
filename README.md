@@ -221,13 +221,14 @@ Expr.RequestResource("ownerId").Eq(Expr.Auth("uid"))
 
 ## The engine (`RuleEngine`)
 
-`RuleEngine` is the recommended entry point. It captures the two app-lifetime constants — the compiled `RuleSet` and the `IRuleValueComparer` — and evaluates over a per-request `RuleRequest`. Because the engine owns the comparer, callers never thread it through individual calls.
+`RuleEngine` is the recommended entry point. It reads its `RuleSet` from an `IRuleSetRepository` on every evaluation and applies a fixed `IRuleValueComparer`, evaluating over a per-request `RuleRequest`. Because the engine owns the comparer, callers never thread it through individual calls; because it reads the ruleset per call, the rules can be hot-swapped (see [Hot-swapping rules at runtime](#hot-swapping-rules-at-runtime)).
 
 ```csharp
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 
-var engine = new RuleEngine(rules);          // optional 2nd arg: a custom IRuleValueComparer
+// Frozen engine: wrap a fixed ruleset in a StaticRuleSetRepository.
+var engine = new RuleEngine(new StaticRuleSetRepository(rules), new DefaultRuleValueComparer());
 
 // Single-resource operation (get / create / update / delete)
 bool allowed = await engine.AllowsAsync(
@@ -274,26 +275,27 @@ The `Winche.Rules.DependencyInjection` namespace registers a configured `RuleEng
 ```csharp
 using Winche.Rules.DependencyInjection;
 
+var ruleset = RulesetBuilder.Build(r => r.Match("users/{userId}", u =>
+    u.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
+
 services.AddWincheRules(o => o
-    .WithRuleset(r => r.Match("users/{userId}", u =>
-        u.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))))
-    // .WithRuleset(existingRuleSet)        // overload that takes a prebuilt RuleSet
-    // .WithComparer(myComparer)            // optional; defaults to DefaultRuleValueComparer
+    .WithMutableRuleSetRepository(ruleset)   // hot-swappable; or WithStaticRuleSetRepository(ruleset) for a frozen engine
+    // .WithValueComparer(myComparer)        // optional; defaults to DefaultRuleValueComparer
 );
 
 // elsewhere
 var engine = provider.GetRequiredService<RuleEngine>();
 ```
 
-`WincheRulesOptions` is a fluent builder: `WithRuleset(RuleSet)`, `WithRuleset(Action<RulesetBuilder>)`, `WithComparer(IRuleValueComparer)`, and `WithRepository(IRuleRepository)`. Every `RuleSet` registered in the container is merged at resolution time (`RuleSet.Merge`), so repeated `AddWincheRules` calls — or rulesets registered elsewhere — accumulate. The engine is registered with `TryAddSingleton`, so the first registration's comparer wins.
+`WincheRulesOptions` is a fluent builder: `WithMutableRuleSetRepository(RuleSet?)` (hot-swappable), `WithStaticRuleSetRepository(RuleSet)` (frozen), `WithRuleSetRepository(IRuleSetRepository)` (your own source), and `WithValueComparer(IRuleValueComparer)`. The non-keyed overload registers a single `RuleEngine` over the configured repository and comparer (no cross-ruleset merge); it is registered with `TryAddSingleton`. If the repository is mutable, its `IMutableRuleSetRepository` write side is registered too, so you can hot-swap even the non-keyed engine.
 
-> For **per-type isolation and runtime reload**, use the keyed overload `AddWincheRules(serviceKey, …)` instead — see [Hot-swapping rules at runtime](#hot-swapping-rules-at-runtime). Keyed registrations are **not** merged: each key is an independent engine with its own ruleset and comparer.
+> For **per-type isolation** — one independent engine per resource type — use the keyed overload `AddWincheRules(serviceKey, …)` — see [Hot-swapping rules at runtime](#hot-swapping-rules-at-runtime). Keyed registrations are **never** merged: each key is an independent engine with its own ruleset and comparer.
 
 ```mermaid
 flowchart LR
-    A["AddWincheRules(o =><br/>o.WithRuleset(...)<br/>.WithComparer(...))"] --> RS[("RuleSet<br/>singletons")]
+    A["AddWincheRules(o =><br/>o.WithMutableRuleSetRepository(...)<br/>.WithValueComparer(...))"] --> RS[("IRuleSetRepository<br/>+ IRuleValueComparer")]
     A --> RE["RuleEngine<br/>singleton"]
-    RS -->|"RuleSet.Merge(all)"| RE
+    RS --> RE
     RE --> App["Resolved by your services"]
 ```
 
@@ -301,21 +303,22 @@ flowchart LR
 
 ## Hot-swapping rules at runtime
 
-An engine reads its ruleset from an `IRuleRepository` on **every** evaluation, so you can replace a
+An engine reads its ruleset from an `IRuleSetRepository` on **every** evaluation, so you can replace a
 running engine's rules — from a file, database, admin endpoint, or message — **without recompiling or
 restarting**. The seam is read/write-separated:
 
 | Type | Role |
 | - | - |
-| `IRuleRepository` | Read side — `RuleSet Current { get; }`. The engine depends only on this. |
-| `IMutableRuleRepository` | Write side — adds `void Update(RuleSet)`. Reload/admin code depends on this. |
-| `MutableRuleRepository` | Default implementation: a lock-free `volatile` reference swap. |
+| `IRuleSetRepository` | Read side — `RuleSet Current { get; }`. The engine depends only on this. |
+| `IMutableRuleSetRepository` | Write side — adds `void Update(RuleSet)`. Reload/admin code depends on this. |
+| `MutableRuleSetRepository` | Hot-swappable implementation: a lock-free `volatile` reference swap. |
+| `StaticRuleSetRepository` | Immutable implementation: a fixed ruleset (a frozen engine). |
 
 Because a `RuleSet` is immutable, `Update` is a single atomic reference write: an in-flight evaluation
 keeps the snapshot it started with, and the next one observes the new rules — no locks.
 
 ```csharp
-var repo   = new MutableRuleRepository(initialRules);
+var repo   = new MutableRuleSetRepository(initialRules);
 var engine = new RuleEngine(repo, comparer);
 
 bool before = await engine.AllowsAsync(RuleOperation.Get, "docs/d1", request);  // e.g. false
@@ -330,52 +333,52 @@ bool after  = await engine.AllowsAsync(RuleOperation.Get, "docs/d1", request);  
 When a consumer runs the library for **multiple resource types**, each type typically has its own rule
 source, its own reload cadence, and its own comparison semantics. Register one **keyed** engine per type
 with `AddWincheRules(serviceKey, …)`. Keyed registrations are fully isolated — **never merged** — each
-with its own ruleset, its own `IRuleValueComparer`, and its own `IMutableRuleRepository`.
+with its own ruleset, its own `IRuleValueComparer`, and (when mutable) its own `IMutableRuleSetRepository`.
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 using Winche.Rules.DependencyInjection;
 
+var documentsRules = RulesetBuilder.Build(r => r.Match("documents/{id}", d =>
+    d.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
+
 services.AddWincheRules("documents", o => o
-    .WithRuleset(r => r.Match("documents/{id}", d =>
-        d.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))))
-    .WithComparer(documentsComparer));
+    .WithMutableRuleSetRepository(documentsRules)
+    .WithValueComparer(documentsComparer));
 
 services.AddWincheRules("orders", o => o
-    .WithRuleset(ordersRules)
-    .WithComparer(ordersComparer));       // a different comparer per type
+    .WithMutableRuleSetRepository(ordersRules)
+    .WithValueComparer(ordersComparer));       // a different comparer per type
 
 // Evaluate — inject the engine for a type by key:
 public sealed class DocumentService([FromKeyedServices("documents")] RuleEngine engine) { /* ... */ }
 
 // Reload one type's rules at runtime — other types are untouched:
-public sealed class DocumentRuleAdmin([FromKeyedServices("documents")] IMutableRuleRepository repo)
+public sealed class DocumentRuleAdmin([FromKeyedServices("documents")] IMutableRuleSetRepository repo)
 {
     public void Apply(RuleSet freshlyLoadedRules) => repo.Update(freshlyLoadedRules);
 }
 ```
 
-For a source that refreshes itself (e.g. a file watcher), implement `IRuleRepository` directly and pass it
-with `WithRepository(myRepository)`; if it also implements `IMutableRuleRepository`, it is registered as
-the write side under that key too.
+A key registered with `WithStaticRuleSetRepository(...)` is **frozen**: no `IMutableRuleSetRepository` is
+registered for it, so resolving one returns `null` — hot-swap is unavailable by design. Use
+`WithMutableRuleSetRepository(...)` for a hot-swappable key. For a source that refreshes itself (e.g. a file
+watcher), implement `IRuleSetRepository` yourself and pass it with `WithRuleSetRepository(myRepository)`; if
+it also implements `IMutableRuleSetRepository`, its write side is registered under that key too.
 
 ```mermaid
 flowchart LR
     subgraph key_docs["key: documents"]
-        R1["IMutableRuleRepository"] --> E1["RuleEngine"]
+        R1["IMutableRuleSetRepository"] --> E1["RuleEngine"]
     end
     subgraph key_orders["key: orders"]
-        R2["IMutableRuleRepository"] --> E2["RuleEngine"]
+        R2["IMutableRuleSetRepository"] --> E2["RuleEngine"]
     end
     Src1["docs rule source"] -->|Update| R1
     Src2["orders rule source"] -->|Update| R2
     E1 --> App["Your services<br/>[FromKeyedServices(...)]"]
     E2 --> App
 ```
-
-The non-keyed `AddWincheRules(configure)` and the `new RuleEngine(ruleSet, comparer)` constructor are
-unchanged; hot-swap is opt-in via the keyed overload, `WithRepository`, or the `IRuleRepository`
-constructor.
 
 ---
 
@@ -541,7 +544,7 @@ RuleSet rules = RulesetBuilder.Build(r =>
             Expr.Exists(Expr.Const("teams/t1")),
             Expr.Get(Expr.Const("teams/t1")).Field("active").Eq(true)))));
 
-var engine = new RuleEngine(rules);
+var engine = new RuleEngine(new StaticRuleSetRepository(rules), new DefaultRuleValueComparer());
 bool allowed = await engine.AllowsAsync(RuleOperation.Get, "docs/d1", new RuleRequest
 {
     Request  = /* ... */,
@@ -567,9 +570,9 @@ public interface IRuleValueComparer
 }
 ```
 
-`DefaultRuleValueComparer.Instance` is used when you don't supply one: numbers compare across `Int`/`Double`; strings/paths use ordinal order; un-orderable kind pairs (null/list/map, or mixed kinds) return `false`.
+`new DefaultRuleValueComparer()` is used when you don't supply one: numbers compare across `Int`/`Double`; strings/paths use ordinal order; un-orderable kind pairs (null/list/map, or mixed kinds) return `false`.
 
-Supply your own — via `new RuleEngine(rules, myComparer)`, `RuleContext.Comparer`, or `WincheRulesOptions.WithComparer(...)` — when the engine must agree with a host system's comparison rules. This matters most for `QueryAnalyzer`: its "provably safe" proof is only valid if it compares values the same way your store executes the query.
+Supply your own — via `new RuleEngine(repository, myComparer)`, `RuleContext.Comparer`, or `WincheRulesOptions.WithValueComparer(...)` — when the engine must agree with a host system's comparison rules. This matters most for `QueryAnalyzer`: its "provably safe" proof is only valid if it compares values the same way your store executes the query.
 
 ---
 
@@ -638,7 +641,7 @@ var merged = RuleSet.Merge([usersRuleset, ordersRuleset, adminRuleset]);
 var denyAll = RuleSet.Merge([]);
 ```
 
-This is useful for assembling per-module rulesets at startup, or for merging a base ruleset with an override layer. (DI registration via `AddWincheRules` performs this merge automatically over every registered `RuleSet`.)
+This is useful for assembling per-module rulesets at startup, or for merging a base ruleset with an override layer, before handing the result to a repository. (`AddWincheRules` does **not** merge across registrations — each registration is one independent engine; compose with `RuleSet.Merge` yourself if you want one engine over several rulesets.)
 
 ---
 
@@ -657,10 +660,11 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 | `RuleOperations` | Static sets: `Read`, `Write`, `All`, `Of(params RuleOperation[])`. |
 | `RulesetBuilder` | `static Build(Action<RulesetBuilder>)` → `RuleSet`, plus `Match(path, configure)`. |
 | `MatchBuilder` | `Allow(IEnumerable<RuleOperation>, RuleExpression)` + `Match(path, configure)`. |
-| `RuleEngine` | `RuleEngine(IRuleRepository, IRuleValueComparer?)` / `RuleEngine(RuleSet, IRuleValueComparer?)`. `Task<bool> AllowsAsync(RuleOperation, string path, RuleRequest, CancellationToken)`; `bool Allows(QueryConstraints, RuleRequest)`. Reads the ruleset from the repository per call. |
-| `IRuleRepository` | Read side of the ruleset seam: `RuleSet Current { get; }`. |
-| `IMutableRuleRepository` | Write side: `IRuleRepository` + `void Update(RuleSet)`. |
-| `MutableRuleRepository` | Default `IMutableRuleRepository`: `MutableRuleRepository(RuleSet)`, lock-free atomic swap. |
+| `RuleEngine` | `RuleEngine(IRuleSetRepository, IRuleValueComparer)`. `Task<bool> AllowsAsync(RuleOperation, string path, RuleRequest, CancellationToken)`; `bool Allows(QueryConstraints, RuleRequest)`. Reads the ruleset from the repository per call. |
+| `IRuleSetRepository` | Read side of the ruleset seam: `RuleSet Current { get; }`. |
+| `IMutableRuleSetRepository` | Write side: `IRuleSetRepository` + `void Update(RuleSet)`. |
+| `MutableRuleSetRepository` | Hot-swappable `IMutableRuleSetRepository`: `MutableRuleSetRepository(RuleSet?)`, lock-free atomic swap. |
+| `StaticRuleSetRepository` | Immutable `IRuleSetRepository`: `StaticRuleSetRepository(RuleSet)` — a frozen engine. |
 | `RulesetEvaluator` | Low-level: `static Task<bool> AllowsAsync(RuleSet, RuleOperation, string path, RuleContext, CancellationToken)`. |
 
 ### `Winche.Rules.Expressions`
@@ -715,8 +719,8 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 
 | Type | Role |
 | - | - |
-| `ServiceCollectionExtensions` | `AddWincheRules(this IServiceCollection, Action<WincheRulesOptions>)` — singleton `RuleEngine` (merged). `AddWincheRules(this IServiceCollection, object serviceKey, Action<WincheRulesOptions>)` — one isolated, hot-swappable keyed engine per type. |
-| `WincheRulesOptions` | Fluent: `WithRuleset(RuleSet)`, `WithRuleset(Action<RulesetBuilder>)`, `WithComparer(IRuleValueComparer)`, `WithRepository(IRuleRepository)`. |
+| `ServiceCollectionExtensions` | `AddWincheRules(this IServiceCollection, Action<WincheRulesOptions>)` — one non-keyed singleton `RuleEngine`. `AddWincheRules(this IServiceCollection, object serviceKey, Action<WincheRulesOptions>)` — one isolated keyed engine per type. |
+| `WincheRulesOptions` | Fluent: `WithMutableRuleSetRepository(RuleSet?)`, `WithStaticRuleSetRepository(RuleSet)`, `WithRuleSetRepository(IRuleSetRepository)`, `WithValueComparer(IRuleValueComparer)`. |
 
 ---
 

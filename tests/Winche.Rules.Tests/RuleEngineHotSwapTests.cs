@@ -16,12 +16,13 @@ public class RuleEngineHotSwapTests
     [Fact]
     public async Task AllowsAsync_ReflectsRepositoryUpdate()
     {
-        var repo = new MutableRuleRepository(DenyAll());
-        var engine = new RuleEngine(repo);
+        var repository = new MutableRuleSetRepository(DenyAll());
+        var comparer = new DefaultRuleValueComparer();
+        var engine = new RuleEngine(repository, comparer);
 
         Assert.False(await engine.AllowsAsync(RuleOperation.Get, "docs/d1", new RuleRequest()));
 
-        repo.Update(AllowReadDocs());   // hot-swap, no new engine
+        repository.Update(AllowReadDocs());   // hot-swap, no new engine
 
         Assert.True(await engine.AllowsAsync(RuleOperation.Get, "docs/d1", new RuleRequest()));
     }
@@ -29,8 +30,9 @@ public class RuleEngineHotSwapTests
     [Fact]
     public void Allows_Query_ReflectsRepositoryUpdate()
     {
-        var repo = new MutableRuleRepository(DenyAll());
-        var engine = new RuleEngine(repo);
+        var repository = new MutableRuleSetRepository(DenyAll());
+        var comparer = new DefaultRuleValueComparer();
+        var engine = new RuleEngine(repository, comparer);
         var query = new QueryConstraints("docs", []);
         var request = new RuleRequest
         {
@@ -39,12 +41,15 @@ public class RuleEngineHotSwapTests
 
         Assert.False(engine.Allows(query, request));
 
-        repo.Update(AllowReadDocs());   // list is part of Read; an unconstrained query is now provably allowed
+        repository.Update(AllowReadDocs());   // list is part of Read; an unconstrained query is now provably allowed
 
         Assert.True(engine.Allows(query, request));
     }
 
     [Fact]
-    public void Ctor_NullRepository_Throws() =>
-        Assert.Throws<ArgumentNullException>(() => new RuleEngine((IRuleRepository)null!));
+    public void Ctor_NullRepository_Throws()
+    {
+        var comparer = new DefaultRuleValueComparer();
+        Assert.Throws<ArgumentNullException>(() => new RuleEngine(null!, comparer));
+    }
 }

@@ -24,10 +24,10 @@ public static class ServiceCollectionExtensions
 
     /// <summary>
     /// Adds an isolated, hot-swappable Winche.Rules engine under <paramref name="serviceKey"/>. Each key
-    /// gets its own ruleset, its own comparer, and its own <see cref="IMutableRuleRepository"/>; keys are
+    /// gets its own ruleset, its own comparer, and its own <see cref="IMutableRuleSetRepository"/>; keys are
     /// never merged with one another. Resolve the engine with <c>[FromKeyedServices(key)] RuleEngine</c>,
-    /// and reload that type's rules at runtime by resolving <c>[FromKeyedServices(key)] IMutableRuleRepository</c>
-    /// and calling <see cref="IMutableRuleRepository.Update"/> — no restart, and other keys are unaffected.
+    /// and reload that type's rules at runtime by resolving <c>[FromKeyedServices(key)] IMutableRuleSetRepository</c>
+    /// and calling <see cref="IMutableRuleSetRepository.Update"/> — no restart, and other keys are unaffected.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
     /// <param name="serviceKey">The key that identifies this engine (typically the resource type).</param>

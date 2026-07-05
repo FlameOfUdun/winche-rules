@@ -5,7 +5,7 @@ namespace Winche.Rules;
 /// <see cref="Current"/> on every evaluation, so an implementation that replaces its ruleset at runtime
 /// makes rules hot-swappable without rebuilding the engine.
 /// </summary>
-public interface IRuleRepository
+public interface IRuleSetRepository
 {
     /// <summary>
     /// The current ruleset. Implementations must make this an O(1), in-memory read; the returned
@@ -15,11 +15,11 @@ public interface IRuleRepository
 }
 
 /// <summary>
-/// An <see cref="IRuleRepository"/> whose ruleset can be replaced at runtime. Reload/admin code depends on
-/// this write-side interface; the engine only ever depends on the read-only <see cref="IRuleRepository"/>,
+/// An <see cref="IRuleSetRepository"/> whose ruleset can be replaced at runtime. Reload/admin code depends on
+/// this write-side interface; the engine only ever depends on the read-only <see cref="IRuleSetRepository"/>,
 /// so a component that merely evaluates rules cannot mutate them.
 /// </summary>
-public interface IMutableRuleRepository : IRuleRepository
+public interface IMutableRuleSetRepository : IRuleSetRepository
 {
     /// <summary>
     /// Atomically replaces the current ruleset. Safe to call concurrently with in-flight evaluations: an

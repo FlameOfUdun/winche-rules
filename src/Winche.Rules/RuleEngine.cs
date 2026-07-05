@@ -4,7 +4,7 @@ using Winche.Rules.Querying;
 namespace Winche.Rules;
 
 /// <summary>
-/// An instantiable rules engine that reads its <see cref="RuleSet"/> from an <see cref="IRuleRepository"/>
+/// An instantiable rules engine that reads its <see cref="RuleSet"/> from an <see cref="IRuleSetRepository"/>
 /// on every evaluation and applies a fixed <see cref="IRuleValueComparer"/> over the per-request
 /// <see cref="RuleRequest"/>. Because the ruleset is read per call, a repository that swaps its ruleset
 /// makes rules hot-swappable without rebuilding the engine. The comparer is applied internally, so callers
@@ -12,27 +12,22 @@ namespace Winche.Rules;
 /// </summary>
 public sealed class RuleEngine
 {
-    private readonly IRuleRepository _repository;
+    private readonly IRuleSetRepository _repository;
     private readonly IRuleValueComparer _comparer;
 
     /// <summary>
-    /// Creates an engine that reads its ruleset from <paramref name="repository"/> on every evaluation;
-    /// <paramref name="comparer"/> defaults to <see cref="DefaultRuleValueComparer"/>.
+    /// Creates an engine that reads its ruleset from <paramref name="repository"/> on every evaluation and
+    /// compares values with <paramref name="comparer"/>.
     /// </summary>
-    public RuleEngine(IRuleRepository repository, IRuleValueComparer? comparer = null)
+    /// <param name="repository">The source of the current ruleset. Must not be <see langword="null"/>.</param>
+    /// <param name="comparer">The comparer for equality/ordering. Must not be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="repository"/> or <paramref name="comparer"/> is <see langword="null"/>.</exception>
+    public RuleEngine(IRuleSetRepository repository, IRuleValueComparer comparer)
     {
         ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(comparer);
         _repository = repository;
-        _comparer = comparer ?? DefaultRuleValueComparer.Instance;
-    }
-
-    /// <summary>
-    /// Creates an engine over a fixed <paramref name="ruleset"/> (not hot-swappable);
-    /// <paramref name="comparer"/> defaults to <see cref="DefaultRuleValueComparer"/>.
-    /// </summary>
-    public RuleEngine(RuleSet ruleset, IRuleValueComparer? comparer = null)
-        : this(new StaticRuleRepository(ruleset), comparer)
-    {
+        _comparer = comparer;
     }
 
     /// <summary>Whether <paramref name="operation"/> on the document at <paramref name="documentPath"/> is allowed.</summary>
