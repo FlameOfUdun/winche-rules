@@ -5,4 +5,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Winche.Rules.Tests/Winche.Rules.Tests.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Winche.Rules.Sample/Winche.Rules.Sample.csproj" />
+  </Folder>
 </Solution>
