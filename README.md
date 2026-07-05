@@ -366,6 +366,15 @@ registered for it, so resolving one returns `null` — hot-swap is unavailable b
 watcher), implement `IRuleSetRepository` yourself and pass it with `WithRuleSetRepository(myRepository)`; if
 it also implements `IMutableRuleSetRepository`, its write side is registered under that key too.
 
+> **Why a mutable repository is registered under two interfaces.** For a hot-swappable key, the *same*
+> `MutableRuleSetRepository` **instance** is registered twice — once as `IRuleSetRepository` (what the engine
+> reads on every evaluation) and once as `IMutableRuleSetRepository` (what reload/admin code writes through
+> `Update`). Registering one instance under both service types gives you read/write separation at the type
+> level — evaluators inject the read-only interface and can't mutate rules — while guaranteeing that an
+> `Update` on the write side is the very object the engine reads, so the swap is seen immediately. A
+> *frozen* (`StaticRuleSetRepository`) key is registered only as `IRuleSetRepository`, so there is no write
+> side at all.
+
 ```mermaid
 flowchart LR
     subgraph key_docs["key: documents"]
