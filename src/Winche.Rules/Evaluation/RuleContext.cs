@@ -37,5 +37,5 @@ public sealed class RuleContext
     /// <summary>
     /// The comparer used for equality/ordering; defaults to <see cref="DefaultRuleValueComparer"/>.
     /// </summary>
-    public IRuleValueComparer Comparer { get; init; } = DefaultRuleValueComparer.Instance;
+    public IRuleValueComparer Comparer { get; init; } = new DefaultRuleValueComparer();
 }

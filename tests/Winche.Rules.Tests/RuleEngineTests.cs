@@ -13,7 +13,7 @@ public class RuleEngineTests
         public bool TryCompare(RuleValue a, RuleValue b, out int r) { r = 0; return true; }
     }
 
-    private static RuleSet OwnerRule() => RulesetBuilder.Build(r =>
+    private static RuleSet OwnerRule() => RuleSetBuilder.Build(r =>
         r.Match("docs/{id}", m => m.Allow(RuleOperations.Read,
             new CompareExpression(
                 new MemberExpression(new MemberExpression(new VarExpression("resource"), "data"), "x"),
@@ -31,14 +31,14 @@ public class RuleEngineTests
     [Fact]
     public async Task AllowsAsync_UsesEngineComparer()
     {
-        var engine = new RuleEngine(OwnerRule(), new AlwaysEqual());   // AlwaysEqual makes "Z" == "Y"
+        var engine = new RuleEngine(new StaticRuleSetRepository(OwnerRule()), new AlwaysEqual());   // AlwaysEqual makes "Z" == "Y"
         Assert.True(await engine.AllowsAsync(RuleOperation.Get, "docs/d1", WithX("Z")));
     }
 
     [Fact]
     public async Task AllowsAsync_DefaultComparer_DeniesMismatch()
     {
-        var engine = new RuleEngine(OwnerRule());                      // default comparer: "Z" != "Y"
+        var engine = new RuleEngine(new StaticRuleSetRepository(OwnerRule()), new DefaultRuleValueComparer());   // default comparer: "Z" != "Y"
         Assert.False(await engine.AllowsAsync(RuleOperation.Get, "docs/d1", WithX("Z")));
     }
 }

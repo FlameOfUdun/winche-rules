@@ -7,7 +7,7 @@ namespace Winche.Rules.Tests;
 public class PathValidationTests
 {
     private static void Build(string path) =>
-        RulesetBuilder.Build(r =>
+        RuleSetBuilder.Build(r =>
             r.Match(path, m => m.Allow(RuleOperations.Read, Expr.Const(true))));
 
     // ── P1: malformed patterns must be rejected, not silently literalized ──────
@@ -41,7 +41,7 @@ public class PathValidationTests
     public void Build_NestedMatchUnderRecursive_Throws()
     {
         Assert.Throws<ArgumentException>(() =>
-            RulesetBuilder.Build(r =>
+            RuleSetBuilder.Build(r =>
                 r.Match("files/{path=**}", m =>
                     m.Match("more/{id}", n =>
                         n.Allow(RuleOperations.Read, Expr.Const(true))))));
@@ -51,7 +51,7 @@ public class PathValidationTests
     public void Build_RecursiveWithoutNesting_Ok()
     {
         var ex = Record.Exception(() =>
-            RulesetBuilder.Build(r =>
+            RuleSetBuilder.Build(r =>
                 r.Match("files/{path=**}", m => m.Allow(RuleOperations.Read, Expr.Const(true)))));
         Assert.Null(ex);
     }

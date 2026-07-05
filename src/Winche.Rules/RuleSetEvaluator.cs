@@ -9,7 +9,7 @@ namespace Winche.Rules;
 /// condition that evaluates true; otherwise default-deny. Path-pattern captures are bound as variables for
 /// the condition. (Use the query analyzer — not this — for <c>list</c>.)
 /// </summary>
-public static class RulesetEvaluator
+public static class RuleSetEvaluator
 {
     /// <summary>
     /// Whether <paramref name="operation"/> on the document at <paramref name="documentPath"/> is allowed.

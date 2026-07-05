@@ -15,50 +15,95 @@ public sealed record WincheRulesOptions
     internal IRuleValueComparer? Comparer { get; private set; }
 
     /// <summary>
-    /// Gets the <see cref="RuleSet"/> to use for rule evaluation.
+    /// Gets the <see cref="IRuleSetRepository"/> to back the engine with, if any.
     /// </summary>
-    internal RuleSet? Ruleset { get; private set; }
+    internal IRuleSetRepository? Repository { get; private set; }
 
     /// <summary>
     /// Sets the <see cref="IRuleValueComparer"/> to use for rule evaluation.
     /// </summary>
-    /// <param name="comparer">The comparer to use for rule evaluation.</param>
+    /// <param name="value">The comparer to use for rule evaluation.</param>
     /// <returns>The current <see cref="WincheRulesOptions"/> instance.</returns>
-    public WincheRulesOptions WithComparer(IRuleValueComparer comparer)
+    public WincheRulesOptions WithRuleValueComparer(IRuleValueComparer value)
     {
-        ArgumentNullException.ThrowIfNull(comparer);
-        Comparer = comparer;
+        ArgumentNullException.ThrowIfNull(value);
+        Comparer = value;
         return this;
     }
 
     /// <summary>
-    /// Sets the <see cref="RuleSet"/> to use for rule evaluation.
+    /// Backs the engine with a custom <see cref="IRuleSetRepository"/> (for example, one that self-refreshes
+    /// from a file or database). If the repository also implements <see cref="IMutableRuleSetRepository"/>, it
+    /// is registered as the write side too, so its rules can be hot-swapped.
     /// </summary>
-    /// <param name="ruleset">The ruleset to use for rule evaluation.</param>
+    /// <param name="value">The repository to read rules from.</param>
     /// <returns>The current <see cref="WincheRulesOptions"/> instance.</returns>
-    public WincheRulesOptions WithRuleset(RuleSet ruleset)
+    public WincheRulesOptions WithRuleSetRepository(IRuleSetRepository value)
     {
-        ArgumentNullException.ThrowIfNull(ruleset);
-        Ruleset = ruleset;
+        ArgumentNullException.ThrowIfNull(value);
+        Repository = value;
         return this;
     }
 
     /// <summary>
-    /// Sets the <see cref="RuleSet"/> to use for rule evaluation by building it using a <see cref="RulesetBuilder"/>.
+    /// Backs the engine with a <see cref="MutableRuleSetRepository"/> seeded with <paramref name="value"/>,
+    /// making the rules hot-swappable at runtime. This is the default when no repository is configured.
     /// </summary>
-    /// <param name="build">The action to build the ruleset.</param>
+    /// <param name="value">The initial ruleset, or <see langword="null"/> for an empty deny-all ruleset filled later via <see cref="IMutableRuleSetRepository.Update"/>.</param>
     /// <returns>The current <see cref="WincheRulesOptions"/> instance.</returns>
-    public WincheRulesOptions WithRuleset(Action<RulesetBuilder> build)
+    public WincheRulesOptions WithMutableRuleSetRepository(RuleSet? value = null)
     {
-        ArgumentNullException.ThrowIfNull(build);
-        Ruleset = RulesetBuilder.Build(build);
+        Repository = new MutableRuleSetRepository(value);
         return this;
-    } 
+    }
 
+    /// <summary>
+    /// Backs the engine with a <see cref="StaticRuleSetRepository"/> that always returns <paramref name="value"/>.
+    /// Use this when the ruleset is fixed at startup; the resulting engine is frozen (no hot-swap).
+    /// </summary>
+    /// <param name="value">The fixed ruleset. Must not be <see langword="null"/>.</param>
+    /// <returns>The current <see cref="WincheRulesOptions"/> instance.</returns>
+    public WincheRulesOptions WithStaticRuleSetRepository(RuleSet value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        Repository = new StaticRuleSetRepository(value);
+        return this;
+    }
+
+    /// <summary>
+    /// Non-keyed registration: registers the configured repository (defaulting to an empty
+    /// <see cref="MutableRuleSetRepository"/>), its comparer, and a single <see cref="RuleEngine"/> over them.
+    /// If the repository is mutable, its <see cref="IMutableRuleSetRepository"/> write side is registered too.
+    /// </summary>
     internal void Configure(IServiceCollection services)
     {
-        ArgumentNullException.ThrowIfNull(Ruleset);
-        services.AddSingleton(Ruleset);
-        services.TryAddSingleton(sp => new RuleEngine(RuleSet.Merge(sp.GetServices<RuleSet>()), Comparer));
+        var repository = Repository ?? new MutableRuleSetRepository();
+        var comparer = Comparer ?? new DefaultRuleValueComparer();
+
+        services.AddSingleton(repository);
+        if (repository is IMutableRuleSetRepository mutable)
+            services.AddSingleton(mutable);
+        services.AddSingleton(comparer);
+        services.TryAddSingleton<RuleEngine>();
+    }
+
+    /// <summary>
+    /// Keyed registration: registers one isolated <c>(repository, comparer, engine)</c> unit under
+    /// <paramref name="serviceKey"/> — its own ruleset and its own comparer. Keys are never merged. The engine
+    /// is built by a keyed factory so it resolves this key's dependencies; a mutable repository also exposes
+    /// its <see cref="IMutableRuleSetRepository"/> write side under the key for hot-swapping.
+    /// </summary>
+    internal void ConfigureKeyed(IServiceCollection services, object serviceKey)
+    {
+        var repository = Repository ?? new MutableRuleSetRepository();
+        var comparer = Comparer ?? new DefaultRuleValueComparer();
+
+        services.AddKeyedSingleton<IRuleSetRepository>(serviceKey, (_, _) => repository);
+        if (repository is IMutableRuleSetRepository mutable)
+            services.AddKeyedSingleton<IMutableRuleSetRepository>(serviceKey, (_, _) => mutable);
+        services.AddKeyedSingleton<IRuleValueComparer>(serviceKey, (_, _) => comparer);
+        services.AddKeyedSingleton<RuleEngine>(serviceKey, (sp, key) =>
+            new RuleEngine(sp.GetRequiredKeyedService<IRuleSetRepository>(key),
+                           sp.GetRequiredKeyedService<IRuleValueComparer>(key)));
     }
 }

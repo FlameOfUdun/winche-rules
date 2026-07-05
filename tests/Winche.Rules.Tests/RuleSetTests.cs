@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Winche.Rules.Tests;
 
-public class RulesetTests
+public class RuleSetTests
 {
     private static RuleContext Ctx(string? uid) => new()
     {
@@ -20,14 +20,14 @@ public class RulesetTests
     };
 
     private static Task<bool> Allows(RuleSet rs, RuleOperation op, string path, string? uid) =>
-        RulesetEvaluator.AllowsAsync(rs, op, path, Ctx(uid));
+        RuleSetEvaluator.AllowsAsync(rs, op, path, Ctx(uid));
 
     // ── Path-param condition ────────────────────────────────────────────────
 
     [Fact]
     public async Task OwnerByPathParam()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u =>
                 u.Allow(RuleOperations.Read, Expr.Auth("uid").Eq(Expr.Param("userId")))));
 
@@ -42,7 +42,7 @@ public class RulesetTests
     [Fact]
     public async Task NestedMatch_AppliesToDeeperPath()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u =>
             {
                 u.Allow(RuleOperations.Read, Expr.Auth("uid").Eq(Expr.Param("userId")));
@@ -60,7 +60,7 @@ public class RulesetTests
     [Fact]
     public async Task RecursiveWildcard_MatchesAnyDepth()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("files/{path=**}", m => m.Allow(RuleOperations.Read, Expr.Const(true))));
 
         Assert.True(await Allows(rs, RuleOperation.Get, "files/a", "x"));
@@ -71,7 +71,7 @@ public class RulesetTests
     [Fact]
     public async Task RecursiveWildcard_DoesNotMatchBareCollection()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("files/{path=**}", m => m.Allow(RuleOperations.Read, Expr.Const(true))));
 
         Assert.True(await Allows(rs, RuleOperation.Get, "files/a", "x"));       // 1 segment under → matches
@@ -84,25 +84,25 @@ public class RulesetTests
     [Fact]
     public async Task NoMatchingRule_Denies()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u => u.Allow(RuleOperations.Read, Expr.Const(true))));
 
         Assert.False(await Allows(rs, RuleOperation.Get, "orders/o1", "x"));
     }
 
-    // ── Ruleset.Merge ─────────────────────────────────────────────────────────
+    // ── RuleSet.Merge ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void Merge_EmptySequence_ReturnsEmptyRuleset()
+    public void Merge_EmptySequence_ReturnsEmptyRuleSet()
     {
         var result = RuleSet.Merge([]);
         Assert.Empty(result.Matches);
     }
 
     [Fact]
-    public void Merge_SingleRuleset_PreservesBlocks()
+    public void Merge_SingleRuleSet_PreservesBlocks()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u =>
                 u.Allow(RuleOperations.Read, Expr.Const(true))));
 
@@ -111,11 +111,11 @@ public class RulesetTests
     }
 
     [Fact]
-    public async Task Merge_TwoRulesets_ContainsAllBlocksAndBothAreAuthorized()
+    public async Task Merge_TwoRuleSets_ContainsAllBlocksAndBothAreAuthorized()
     {
-        var rs1 = RulesetBuilder.Build(r =>
+        var rs1 = RuleSetBuilder.Build(r =>
             r.Match("alpha/{id}", b => b.Allow(RuleOperations.Read, Expr.Const(true))));
-        var rs2 = RulesetBuilder.Build(r =>
+        var rs2 = RuleSetBuilder.Build(r =>
             r.Match("beta/{id}", b => b.Allow(RuleOperations.Read, Expr.Const(true))));
 
         var merged = RuleSet.Merge([rs1, rs2]);
@@ -139,9 +139,9 @@ public class RulesetTests
     // ── JSON round-trip ──────────────────────────────────────────────────────
 
     [Fact]
-    public void Ruleset_RoundTrips()
+    public void RuleSet_RoundTrips()
     {
-        var rs = RulesetBuilder.Build(r =>
+        var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u =>
             {
                 u.Allow(RuleOperations.Read, Expr.Auth("uid").Eq(Expr.Param("userId")));
@@ -149,6 +149,6 @@ public class RulesetTests
                 u.Match("posts/{postId}", p => p.Allow(RuleOperations.Read, Expr.Const(true)));
             }));
 
-        Assert.Equal(rs, RuleJson.DeserializeRuleset(RuleJson.Serialize(rs)));
+        Assert.Equal(rs, RuleJson.DeserializeRuleSet(RuleJson.Serialize(rs)));
     }
 }

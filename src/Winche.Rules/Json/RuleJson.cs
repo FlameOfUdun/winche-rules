@@ -31,5 +31,5 @@ public static class RuleJson
     /// <summary>
     /// Deserializes a ruleset from JSON.
     /// </summary>
-    public static RuleSet DeserializeRuleset(string json) => JsonSerializer.Deserialize<RuleSet>(json, Options) ?? throw new JsonException("Ruleset JSON deserialized to null.");
+    public static RuleSet DeserializeRuleSet(string json) => JsonSerializer.Deserialize<RuleSet>(json, Options) ?? throw new JsonException("RuleSet JSON deserialized to null.");
 }

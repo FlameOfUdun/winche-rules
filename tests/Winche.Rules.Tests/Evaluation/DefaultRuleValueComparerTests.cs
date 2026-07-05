@@ -9,7 +9,7 @@ public class DefaultRuleValueComparerTests
     [Fact]
     public void Default_MirrorsStructEquality_AndOrdering()
     {
-        var c = DefaultRuleValueComparer.Instance;
+        var c = new DefaultRuleValueComparer();
 
         Assert.True(c.AreEqual(RuleValue.Int(5), RuleValue.Double(5.0)));   // numeric cross-type
         Assert.False(c.AreEqual(RuleValue.String("a"), RuleValue.String("b")));

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace Winche.Rules.Tests;
 
-public class RulesetEvaluatorComparerTests
+public class RuleSetEvaluatorComparerTests
 {
     // Declares everything equal — proves AllowsAsync forwards ctx.Comparer into the scoped
     // context it builds for path captures (regression: the scoped context used to drop Comparer).
@@ -19,7 +19,7 @@ public class RulesetEvaluatorComparerTests
     public async Task AllowsAsync_ForwardsComparer_IntoScopedContext()
     {
         // rule: allow read if resource.data.x == "Y"
-        var ruleset = RulesetBuilder.Build(r =>
+        var ruleset = RuleSetBuilder.Build(r =>
             r.Match("docs/{id}", m => m.Allow(RuleOperations.Read,
                 new CompareExpression(
                     new MemberExpression(new MemberExpression(new VarExpression("resource"), "data"), "x"),
@@ -33,6 +33,6 @@ public class RulesetEvaluatorComparerTests
         });
         var ctx = new RuleContext { Resource = resource, Comparer = new AlwaysEqual() };
 
-        Assert.True(await RulesetEvaluator.AllowsAsync(ruleset, RuleOperation.Get, "docs/d1", ctx));
+        Assert.True(await RuleSetEvaluator.AllowsAsync(ruleset, RuleOperation.Get, "docs/d1", ctx));
     }
 }

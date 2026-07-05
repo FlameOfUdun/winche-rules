@@ -22,9 +22,6 @@ public interface IRuleValueComparer
 /// <summary>The engine's built-in comparer: delegates to <see cref="RuleValue"/>'s own semantics.</summary>
 public sealed class DefaultRuleValueComparer : IRuleValueComparer
 {
-    /// <summary>Shared instance.</summary>
-    public static readonly DefaultRuleValueComparer Instance = new();
-
     /// <inheritdoc/>
     public bool AreEqual(RuleValue a, RuleValue b) => a.Equals(b);
 
