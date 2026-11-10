@@ -167,4 +167,31 @@ public class QueryAnalyzerTests
         // same collection, unconstrained → rejected
         Assert.False(Allows(rs, Q("orgs/acme/items"), "any"));
     }
+
+    // ── 3.1.0: conditions that don't depend on the documents are evaluated ─────
+
+    [Fact]
+    public void A_condition_on_the_request_alone_is_evaluated_not_rejected()
+    {
+        var rs = RuleSetBuilder.Build(r =>
+            r.Match("docs/{id}", d => d.Allow(RuleOperations.Read,
+                Text.RuleText.Parse("request.auth.uid in ['admin1', 'admin2'] || request.auth.uid.matches('ops-.*')"))));
+
+        Assert.True(Allows(rs, Q("docs"), "admin2"));
+        Assert.True(Allows(rs, Q("docs"), "ops-7"));
+        Assert.False(Allows(rs, Q("docs"), "u1"));
+        Assert.False(Allows(rs, Q("docs"), uid: null));   // auth is null: evaluation fails → denies
+    }
+
+    [Fact]
+    public void A_condition_on_documents_or_unbound_captures_is_still_not_guessed()
+    {
+        var rs = RuleSetBuilder.Build(r =>
+            r.Match("docs/{id}", d => d.Allow(RuleOperations.Read, Text.RuleText.Parse("resource.tags.hasAny(['x'])"))));
+        Assert.False(Allows(rs, Q("docs"), "u1"));
+
+        var byId = RuleSetBuilder.Build(r =>
+            r.Match("docs/{id}", d => d.Allow(RuleOperations.Read, Text.RuleText.Parse("id in ['a']"))));
+        Assert.False(Allows(byId, Q("docs"), "u1"));   // {id} is per document in a list
+    }
 }

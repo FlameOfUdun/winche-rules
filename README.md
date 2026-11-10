@@ -35,7 +35,7 @@ Winche.Rules implements a declarative, path-based authorization model.
 
 **Allow-only, default-deny, OR semantics.** Every rule is an `allow` — there is no `deny`. If no `allow` rule matches and evaluates to `true`, the operation is rejected. When multiple rules match a path, access is granted if *any one* of them evaluates to `true`.
 
-**Rules are not filters.** This is the most important design point for `list`/query operations. The engine does **not** silently remove resources from a result set. Instead, it analyzes the query's constraints *before* execution and asks: "Does this query's shape provably guarantee that every result satisfies a read rule?" If yes, the query is allowed. If not, the query is **rejected** and the client must add the necessary constraints. This is the `QueryAnalyzer`, and it is *sound*: it only allows queries it can prove safe; it rejects anything it cannot prove, including rules that use `get()`/`exists()`, ternaries, or `in`.
+**Rules are not filters.** This is the most important design point for `list`/query operations. The engine does **not** silently remove resources from a result set. Instead, it analyzes the query's constraints *before* execution and asks: "Does this query's shape provably guarantee that every result satisfies a read rule?" If yes, the query is allowed. If not, the query is **rejected** and the client must add the necessary constraints. This is the `QueryAnalyzer`, and it is *sound*: it only allows queries it can prove safe; it rejects anything it cannot prove, including rules that use `get()`/`exists()` or ternaries over document fields. (Conditions that don't depend on the documents at all are evaluated directly.)
 
 **Single-resource operations** (`get`, `create`, `update`, `delete`) are evaluated by loading the resource and running the condition **in memory**. The engine never touches your backing store on its own; you hand it the pre-loaded resource.
 
@@ -218,6 +218,50 @@ Expr.RequestResource("ownerId").Eq(Expr.Auth("uid"))
 ```
 
 ---
+
+## Functions (3.1.0)
+
+Besides `exists(path)` / `get(path)`, conditions can call these pure functions (each also has a C#
+helper on `RuleExpression`, e.g. `.Keys().HasOnly("a", "b")`):
+
+| Text | Meaning |
+| --- | --- |
+| `x.size()` | length of a string, list or map |
+| `m.keys()` | a map's keys (sorted) |
+| `l.hasOnly([...])` / `l.hasAll([...])` / `l.hasAny([...])` | every element of `l` is listed / `l` has all / any of them |
+| `after.diff(before)` | how two maps differ; then `.affectedKeys()`, `.addedKeys()`, `.removedKeys()`, `.changedKeys()`, `.unchangedKeys()` |
+| `x is string` | type check: `string int float number bool null map list timestamp bytes path` |
+| `s.matches('re')` | the whole string matches (100 ms limit; an invalid or slow regex denies) |
+| `s.lower()` / `s.upper()` | case conversion |
+| `m.get('key', default)` | the value at a key, or `default` when absent |
+
+A wrong argument or type is an evaluation error, which denies — like a missing field.
+
+For `list` queries, a condition that doesn't depend on the documents — only on `request`, path captures
+bound by the collection path, literals and these functions — is now simply evaluated (e.g.
+`request.auth.uid in ['admin1', 'admin2']`), instead of being rejected as unprovable.
+
+## Rules as text (3.1.0)
+
+`RuleText.Parse(string)` and `RuleText.Format(RuleExpression)` convert conditions to and from a text form
+close to Firestore's rules language — what the Winche console's rules editor uses:
+
+```text
+request.auth.token.sub == userId
+  && request.resource.keys().hasOnly(['name', 'email'])     // comments run to the end of the line
+  && request.resource.name is string
+  && !('role' in request.resource.diff(resource).affectedKeys())
+```
+
+- Operators, loosest first: `c ? a : b`, `||`, `&&`, comparisons `== != < <= > >=` / `in` / `is`, `!`,
+  then `.field`, `[index]` and method calls. `x.f(a)` is the same as `f(x, a)`.
+- Literals: numbers, `'strings'` / `"strings"`, `true`, `false`, `null`, lists `[...]` and maps `{'k': v}` of
+  constants, `timestamp('2027-01-01T00:00:00Z')`, `path('users/u1')`, `bytes('AAEC')`, `float('1e3')`.
+- A name that isn't an identifier (or is a keyword) is written in backticks: ``resource.`odd name` ``.
+- Errors are `RuleSyntaxException` with a 1-based `Line` and `Column`.
+
+Text and the JSON form round-trip: formatting then parsing gives the same expression, except that nested
+`&&`/`||` are flattened and empty ones read back as `true`/`false`.
 
 ## The engine (`RuleEngine`)
 

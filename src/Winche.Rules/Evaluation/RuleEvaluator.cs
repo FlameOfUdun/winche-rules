@@ -152,7 +152,7 @@ public static class RuleEvaluator
         switch (call.Name)
         {
             case "exists":
-            case "get":
+            case "get" when call.Args.Count == 1:
                 var source = ctx.Provider ?? throw new RuleEvaluationException($"'{call.Name}()' requires a document source.");
                 var path = (await EvalAsync(Arg(call, 0), ctx, ct).ConfigureAwait(false));
                 if (path.Kind is not (RuleValueKind.String or RuleValueKind.Path))
@@ -162,18 +162,12 @@ public static class RuleEvaluator
                     ? RuleValue.Bool(await source.ExistsAsync(p, ct).ConfigureAwait(false))
                     : await source.GetAsync(p, ct).ConfigureAwait(false);
 
-            case "size":
-                var arg = await EvalAsync(Arg(call, 0), ctx, ct).ConfigureAwait(false);
-                return RuleValue.Int(arg.Kind switch
-                {
-                    RuleValueKind.String => arg.AsString.Length,
-                    RuleValueKind.List => arg.AsList.Count,
-                    RuleValueKind.Map => arg.AsMap.Count,
-                    _ => throw new RuleEvaluationException($"size() requires a string/list/map, got {arg.Kind}."),
-                });
-
             default:
-                throw new RuleEvaluationException($"Unknown function '{call.Name}'.");
+                var args = new List<RuleValue>(call.Args.Count);
+                foreach (var a in call.Args) args.Add(await EvalAsync(a, ctx, ct).ConfigureAwait(false));
+                return RuleFunctions.TryCall(call.Name, args, ctx.Comparer, out var result)
+                    ? result
+                    : throw new RuleEvaluationException($"Unknown function '{call.Name}'.");
         }
     }
 

@@ -91,9 +91,30 @@ public static class QueryAnalyzer
                 return ProveCompare(c, query, ctx);
 
             default:
-                return Proof.Unknown;
+                // Doesn't depend on the documents (only request, bound path captures, literals and pure
+                // functions): it has the same value for every result, so just evaluate it.
+                if (!IsConstant(expr, ctx)) return Proof.Unknown;
+                return RuleEvaluator.EvaluateAsync(expr, ctx).GetAwaiter().GetResult() ? Proof.True : Proof.False;
         }
     }
+
+    // No resource, no unbound path capture, no exists()/get(path): evaluation can't block or vary per document.
+    private static bool IsConstant(RuleExpression expr, RuleContext ctx) => expr switch
+    {
+        LiteralExpression => true,
+        VarExpression v => v.Name == "request" || (v.Name != "resource" && ctx.Params.ContainsKey(v.Name)),
+        MemberExpression m => IsConstant(m.Target, ctx),
+        IndexExpression ix => IsConstant(ix.Target, ctx) && IsConstant(ix.Index, ctx),
+        CompareExpression c => IsConstant(c.Left, ctx) && IsConstant(c.Right, ctx),
+        InExpression i => IsConstant(i.Item, ctx) && IsConstant(i.Collection, ctx),
+        NotExpression n => IsConstant(n.Operand, ctx),
+        AndExpression a => a.Operands.All(o => IsConstant(o, ctx)),
+        OrExpression o => o.Operands.All(x => IsConstant(x, ctx)),
+        ConditionalExpression c => IsConstant(c.Condition, ctx) && IsConstant(c.Then, ctx) && IsConstant(c.Else, ctx),
+        CallExpression call => call.Name != "exists" && !(call.Name == "get" && call.Args.Count == 1)
+                               && call.Args.All(a => IsConstant(a, ctx)),
+        _ => false,
+    };
 
     private static Proof ProveCompare(CompareExpression c, QueryConstraints query, RuleContext ctx)
     {

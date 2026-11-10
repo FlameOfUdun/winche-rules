@@ -105,6 +105,11 @@ public static class Expr
     public static RuleExpression Size(RuleExpression value) => Call("size", value);
 
     /// <summary>
+    /// A constant list of strings, e.g. for <c>hasOnly</c> or <c>in</c>.
+    /// </summary>
+    public static RuleExpression Strings(params string[] values) => Value(RuleValue.List([.. values.Select(RuleValue.String)]));
+
+    /// <summary>
     /// Logical AND of all operands.
     /// </summary>
     public static RuleExpression All(params RuleExpression[] operands) => new AndExpression(operands);
@@ -201,4 +206,54 @@ public static class RuleExprExtensions
     /// Logical negation.
     /// </summary>
     public static RuleExpression Not(this RuleExpression operand) => new NotExpression(operand);
+
+    // ── functions (see Evaluation.RuleFunctions) ──────────────────────────────
+
+    /// <summary><c>this.size()</c>: length of a string, list or map.</summary>
+    public static RuleExpression Size(this RuleExpression target) => Expr.Call("size", target);
+
+    /// <summary><c>this.keys()</c>: a map's keys.</summary>
+    public static RuleExpression Keys(this RuleExpression map) => Expr.Call("keys", map);
+
+    /// <summary><c>this.hasOnly([...])</c>: every element of this list is one of <paramref name="allowed"/>.</summary>
+    public static RuleExpression HasOnly(this RuleExpression list, params string[] allowed) => Expr.Call("hasOnly", list, Expr.Strings(allowed));
+
+    /// <summary><c>this.hasAll([...])</c>: this list contains every one of <paramref name="required"/>.</summary>
+    public static RuleExpression HasAll(this RuleExpression list, params string[] required) => Expr.Call("hasAll", list, Expr.Strings(required));
+
+    /// <summary><c>this.hasAny([...])</c>: this list contains at least one of <paramref name="candidates"/>.</summary>
+    public static RuleExpression HasAny(this RuleExpression list, params string[] candidates) => Expr.Call("hasAny", list, Expr.Strings(candidates));
+
+    /// <summary><c>this.diff(before)</c>: how this map differs from <paramref name="before"/>.</summary>
+    public static RuleExpression Diff(this RuleExpression after, RuleExpression before) => Expr.Call("diff", after, before);
+
+    /// <summary><c>diff.affectedKeys()</c>: keys added, removed or changed.</summary>
+    public static RuleExpression AffectedKeys(this RuleExpression diff) => Expr.Call("affectedKeys", diff);
+
+    /// <summary><c>diff.addedKeys()</c>.</summary>
+    public static RuleExpression AddedKeys(this RuleExpression diff) => Expr.Call("addedKeys", diff);
+
+    /// <summary><c>diff.removedKeys()</c>.</summary>
+    public static RuleExpression RemovedKeys(this RuleExpression diff) => Expr.Call("removedKeys", diff);
+
+    /// <summary><c>diff.changedKeys()</c>.</summary>
+    public static RuleExpression ChangedKeys(this RuleExpression diff) => Expr.Call("changedKeys", diff);
+
+    /// <summary><c>diff.unchangedKeys()</c>.</summary>
+    public static RuleExpression UnchangedKeys(this RuleExpression diff) => Expr.Call("unchangedKeys", diff);
+
+    /// <summary><c>this is type</c>: string, int, float, number, bool, null, map, list, timestamp, bytes or path.</summary>
+    public static RuleExpression Is(this RuleExpression value, string type) => Expr.Call("is", value, Expr.Const(type));
+
+    /// <summary><c>this.matches(regex)</c>: the whole string matches <paramref name="regex"/>.</summary>
+    public static RuleExpression Matches(this RuleExpression value, string regex) => Expr.Call("matches", value, Expr.Const(regex));
+
+    /// <summary><c>this.lower()</c>.</summary>
+    public static RuleExpression Lower(this RuleExpression value) => Expr.Call("lower", value);
+
+    /// <summary><c>this.upper()</c>.</summary>
+    public static RuleExpression Upper(this RuleExpression value) => Expr.Call("upper", value);
+
+    /// <summary><c>this.get(key, default)</c>: a map's value at <paramref name="key"/>, or <paramref name="fallback"/> when absent.</summary>
+    public static RuleExpression GetOr(this RuleExpression map, string key, RuleExpression fallback) => Expr.Call("get", map, Expr.Const(key), fallback);
 }
