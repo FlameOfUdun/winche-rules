@@ -28,6 +28,7 @@ public sealed class RuleSetBuilder
         ArgumentNullException.ThrowIfNull(configure);
         var builder = new RuleSetBuilder();
         configure(builder);
+        Matching.RuleFlatten.Validate(builder._matches);
         return new RuleSet(builder._matches);
     }
 

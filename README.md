@@ -111,7 +111,10 @@ Rules are built with the fluent `RuleSetBuilder.Build` API, which returns a `Rul
 
 - **Literal segments** — `users`
 - **Single-segment capture** — `{userId}` (binds one path segment to a param)
-- **Recursive capture** — `{doc=**}` (must be the last segment; matches the rest of the path at any depth — the current path itself *and* everything beneath it)
+- **Recursive capture** — `{doc=**}`, one per path (counting the parents of nested matches). At the end
+  (`users/{rest=**}`) it matches one or more segments — the rest of the path at any depth. At the start or in the
+  middle (`{path=**}/posts/{postId}`, 3.1.0) it matches zero or more, so it covers `posts` under any parent,
+  including a top-level one; its capture is those segments as a path.
 
 `Allow` takes a set of operations and a condition expression. Use `RuleOperations.Read` (= `get` + `list`), `RuleOperations.Write` (= `create` + `update` + `delete`), `RuleOperations.All`, or `RuleOperations.Of(...)` for an explicit set.
 
@@ -523,6 +526,11 @@ The evaluator matches the path against each rule's path pattern, binds the captu
 ---
 
 ## Authorizing queries (`list`)
+
+**Collection group queries (3.1.0).** `new QueryConstraints("posts", constraints, CollectionGroup: true)` is a
+query over every `posts` collection, under any parent. Only rules that cover every parent govern it:
+`{path=**}/posts/{postId}`, `{path=**}/{coll}/{doc}` (with `coll` bound to `posts`), or a bare `{path=**}`.
+The parents' capture is per result, so a condition on it can't be proven.
 
 `QueryAnalyzer.Allows` (or `RuleEngine.Allows`) performs static analysis: it proves that the query's constraints are sufficient to satisfy a read rule for every possible result. It never executes the query.
 

@@ -46,8 +46,8 @@ internal static partial class PathPattern
 
                 if (inner.EndsWith("=**", StringComparison.Ordinal))
                 {
-                    if (i != raw.Length - 1)
-                        throw new ArgumentException($"Recursive wildcard '{s}' must be the last segment.", nameof(pattern));
+                    if (segments.Any(x => x is RecursiveSegment))
+                        throw new ArgumentException($"A path may have only one recursive wildcard; '{s}' is a second.", nameof(pattern));
                     var name = inner[..^3];
                     if (!CaptureName().IsMatch(name))
                         throw new ArgumentException(
@@ -58,7 +58,7 @@ internal static partial class PathPattern
                 {
                     if (inner.Contains('='))
                         throw new ArgumentException(
-                            $"Invalid capture '{s}': only the trailing '{{name=**}}' form may use '='.", nameof(pattern));
+                            $"Invalid capture '{s}': only the recursive '{{name=**}}' form may use '='.", nameof(pattern));
                     if (!CaptureName().IsMatch(inner))
                         throw new ArgumentException(
                             $"Invalid capture name in '{s}': must match [A-Za-z_][A-Za-z0-9_]*.", nameof(pattern));
@@ -70,7 +70,7 @@ internal static partial class PathPattern
                 if (s.Contains('*'))
                     throw new ArgumentException(
                         $"Bare wildcard segment '{s}' is not valid; use '{{name}}' for a single segment or " +
-                        "a trailing '{name=**}' for a recursive wildcard.", nameof(pattern));
+                        "'{name=**}' for a recursive wildcard.", nameof(pattern));
                 segments.Add(new LiteralSegment(s));
             }
         }
@@ -78,37 +78,55 @@ internal static partial class PathPattern
     }
 
     /// <summary>
-    /// Matches a concrete path against a pattern, capturing variables.
+    /// Matches a concrete path against a pattern, capturing variables. A recursive wildcard at the end
+    /// (<c>users/{rest=**}</c>) matches one or more segments; one at the start or in the middle
+    /// (<c>{path=**}/posts/{postId}</c>) matches zero or more, so it also covers a top-level <c>posts</c>.
+    /// Its capture is the matched segments as a path. A pattern with more than one recursive wildcard matches
+    /// nothing (they're rejected when rules are built).
     /// </summary>
     public static bool TryMatch(IReadOnlyList<PathSegment> pattern, string path, out Dictionary<string, RuleValue> captures)
     {
         captures = [];
         var segs = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-
+        var recursive = -1;
         for (var i = 0; i < pattern.Count; i++)
         {
-            switch (pattern[i])
+            if (pattern[i] is not RecursiveSegment) continue;
+            if (recursive >= 0) return false;
+            recursive = i;
+        }
+
+        if (recursive < 0)
+            return pattern.Count == segs.Length && MatchRange(pattern, 0, segs, 0, pattern.Count, captures);
+
+        var suffix = pattern.Count - recursive - 1;
+        var middle = segs.Length - recursive - suffix;
+        if (middle < (suffix == 0 ? 1 : 0)) return false;   // trailing: one or more; otherwise zero or more
+        if (!MatchRange(pattern, 0, segs, 0, recursive, captures)) return false;
+        if (!MatchRange(pattern, recursive + 1, segs, segs.Length - suffix, suffix, captures)) return false;
+        captures[((RecursiveSegment)pattern[recursive]).Name] = RuleValue.Path(string.Join('/', segs[recursive..(recursive + middle)]));
+        return true;
+    }
+
+    private static bool MatchRange(IReadOnlyList<PathSegment> pattern, int from, string[] segs, int segFrom, int count, Dictionary<string, RuleValue> captures)
+    {
+        for (var j = 0; j < count; j++)
+        {
+            var seg = segs[segFrom + j];
+            switch (pattern[from + j])
             {
-                case RecursiveSegment r:
-                    if (i >= segs.Length) return false;   // recursive wildcard matches one or more segments (Firestore parity)
-                    captures[r.Name] = RuleValue.Path(string.Join('/', segs[i..]));
-                    return true;
-                default:
-                    if (i >= segs.Length) return false;
-                    if (pattern[i] is LiteralSegment lit)
-                    {
-                        if (!string.Equals(lit.Value, segs[i], StringComparison.Ordinal)) return false;
-                    }
-                    else if (pattern[i] is ParamSegment p)
-                    {
-                        captures[p.Name] = RuleValue.String(segs[i]);
-                    }
+                case LiteralSegment lit when !string.Equals(lit.Value, seg, StringComparison.Ordinal):
+                    return false;
+                case ParamSegment p:
+                    captures[p.Name] = RuleValue.String(seg);
                     break;
             }
         }
-
-        return pattern.Count == segs.Length;   // no recursive wildcard → lengths must match exactly
+        return true;
     }
+
+    /// <summary>The number of recursive wildcards in a (possibly flattened) pattern.</summary>
+    internal static int RecursiveCount(IReadOnlyList<PathSegment> pattern) => pattern.Count(s => s is RecursiveSegment);
 
     internal static bool TryMatchPrefix(IReadOnlyList<PathSegment> prefix, string path, out Dictionary<string, RuleValue> captures)
     {

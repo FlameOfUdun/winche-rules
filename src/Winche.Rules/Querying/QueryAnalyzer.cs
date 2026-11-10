@@ -26,7 +26,10 @@ public static class QueryAnalyzer
         foreach (var rule in RuleFlatten.Flatten(ruleset.Matches, []))
         {
             if (!rule.Allow.Operations.Contains(RuleOperation.List)) continue;
-            if (!Governs(rule.Pattern, query.Collection, out var parentParams)) continue;
+            var governs = query.CollectionGroup
+                ? GovernsGroup(rule.Pattern, query.Collection, out var parentParams)
+                : Governs(rule.Pattern, query.Collection, out parentParams);
+            if (!governs) continue;
 
             var ctx = new RuleContext { Request = context.Request, Params = parentParams, Provider = context.Provider, Comparer = context.Comparer };
             if (Prove(rule.Allow.Condition, query, ctx) == Proof.True)
@@ -51,6 +54,26 @@ public static class QueryAnalyzer
             RecursiveSegment => PathPattern.TryMatchPrefix(prefix, collection, out parentParams),
             _ => false,
         };
+    }
+
+    // A collection group query reads `id` under any parent, so a rule governs it only if it covers every
+    // parent: {p=**}/id/{doc} (the parents' capture stays unbound — per result), {p=**}/{coll}/{doc} (coll
+    // binds to id), or a bare {p=**} (everything).
+    private static bool GovernsGroup(IReadOnlyList<PathSegment> pattern, string collectionId, out Dictionary<string, RuleValue> parentParams)
+    {
+        parentParams = [];
+        switch (pattern)
+        {
+            case [RecursiveSegment]:
+                return true;
+            case [RecursiveSegment, LiteralSegment lit, ParamSegment] when lit.Value == collectionId:
+                return true;
+            case [RecursiveSegment, ParamSegment coll, ParamSegment]:
+                parentParams[coll.Name] = RuleValue.String(collectionId);
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static Proof Prove(RuleExpression expr, QueryConstraints query, RuleContext ctx)

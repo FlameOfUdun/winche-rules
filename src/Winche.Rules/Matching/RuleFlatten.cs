@@ -7,6 +7,23 @@ internal sealed record FlannetedRule(IReadOnlyList<PathSegment> Pattern, AllowRu
 /// </summary>
 internal static class RuleFlatten
 {
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> when a block's full path (its parents' paths and its own) has
+    /// more than one recursive wildcard — such a rule could never match.
+    /// </summary>
+    public static void Validate(IReadOnlyList<MatchBlock> blocks, IReadOnlyList<PathSegment>? prefix = null, string? prefixText = null)
+    {
+        foreach (var block in blocks)
+        {
+            var own = PathPattern.Parse(block.Path);
+            IReadOnlyList<PathSegment> full = prefix is null ? own : [.. prefix, .. own];
+            var fullText = prefixText is null ? block.Path : $"{prefixText}/{block.Path}";
+            if (PathPattern.RecursiveCount(full) > 1)
+                throw new ArgumentException($"match '{fullText}' has more than one recursive wildcard (including its parents'); it could never match.");
+            Validate(block.Matches, full, fullText);
+        }
+    }
+
     public static IEnumerable<FlannetedRule> Flatten(IReadOnlyList<MatchBlock> blocks, IReadOnlyList<PathSegment> prefix)
     {
         foreach (var block in blocks)

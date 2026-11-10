@@ -77,6 +77,7 @@ public static partial class RuleText
     private sealed class FileParser(string text)
     {
         private int _pos;
+        private IReadOnlyList<PathSegment> _prefix = [];
 
         public RuleSet Parse()
         {
@@ -111,6 +112,8 @@ public static partial class RuleText
 
             SkipTrivia();
             Expect('{', "after the match path");
+            var outer = _prefix;
+            _prefix = [.. outer, .. PathPattern.Parse(path)];
 
             var allow = new List<AllowRule>();
             var nested = new List<MatchBlock>();
@@ -121,6 +124,7 @@ public static partial class RuleText
                 if (text[_pos] == '}')
                 {
                     _pos++;
+                    _prefix = outer;
                     break;
                 }
                 var wordAt = _pos;
@@ -130,6 +134,8 @@ public static partial class RuleText
                 else throw Fail(word.Length == 0 ? $"Unexpected '{text[wordAt]}'" : $"Expected 'allow', 'match' or '}}' but found '{word}'", wordAt);
             }
 
+            if (PathPattern.RecursiveCount([.. _prefix, .. PathPattern.Parse(path)]) > 1)
+                throw Fail($"'match {path}' has a second recursive wildcard (a path, including its parents', may have one)", at);
             if (nested.Count > 0 && PathPattern.Parse(path)[^1] is RecursiveSegment)
                 throw Fail($"'match {path}' ends in a recursive wildcard, so nothing nested in it can match", at);
             return new MatchBlock(path, allow, nested);

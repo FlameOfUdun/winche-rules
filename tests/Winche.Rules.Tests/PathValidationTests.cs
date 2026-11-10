@@ -19,9 +19,9 @@ public class PathValidationTests
     [InlineData("users/{id")]       // unbalanced open brace
     [InlineData("users/id}")]       // unbalanced close brace
     [InlineData("a{id}")]           // braces don't wrap the whole segment
-    [InlineData("users/{id=*}")]    // '=' allowed only in trailing '{name=**}'
+    [InlineData("users/{id=*}")]    // '=' allowed only in '{name=**}'
     [InlineData("users/{a b}")]     // capture name not an identifier
-    [InlineData("a/{x=**}/b")]      // recursive wildcard not last
+    [InlineData("{x=**}/b/{y=**}")] // two recursive wildcards
     public void Build_RejectsMalformedPattern(string path) =>
         Assert.Throws<ArgumentException>(() => Build(path));
 
