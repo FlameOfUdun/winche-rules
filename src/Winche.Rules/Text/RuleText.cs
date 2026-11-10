@@ -38,7 +38,7 @@ public sealed class RuleSyntaxException(string message, int offset, int line, in
 /// <para><see cref="Format"/> and <see cref="Parse"/> round-trip: parsing formatted text gives back the same
 /// expression, up to flattening nested <c>&amp;&amp;</c>/<c>||</c> and writing empty ones as <c>true</c>/<c>false</c>.</para>
 /// </summary>
-public static class RuleText
+public static partial class RuleText
 {
     /// <summary>Functions written as methods on their first argument (<c>x.keys()</c> rather than <c>keys(x)</c>).</summary>
     private static readonly HashSet<string> Methods = new(StringComparer.Ordinal)

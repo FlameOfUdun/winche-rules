@@ -260,6 +260,25 @@ request.auth.token.sub == userId
 - A name that isn't an identifier (or is a keyword) is written in backticks: ``resource.`odd name` ``.
 - Errors are `RuleSyntaxException` with a 1-based `Line` and `Column`.
 
+A whole ruleset can be written the same way, as one file — `RuleText.ParseRuleSet(string)` /
+`RuleText.FormatRuleSet(RuleSet)`:
+
+```text
+match users/{uid} {
+  allow read: if request.auth.uid == uid;
+  allow create: if request.auth.uid == uid
+    && request.resource.data.keys().hasOnly(['name', 'email']);
+
+  match notes/{noteId} {
+    allow read, write: if request.auth.uid == uid;
+  }
+}
+```
+
+Operations are `get list create update delete`, plus `read` (get + list) and `write` (create + update +
+delete). `allow get;` with no condition allows unconditionally (written back as `if true`). Nested `match`
+paths extend their parent's. Comments are allowed but not kept: rules are stored as data.
+
 Text and the JSON form round-trip: formatting then parsing gives the same expression, except that nested
 `&&`/`||` are flattened and empty ones read back as `true`/`false`.
 
