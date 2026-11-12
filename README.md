@@ -2,7 +2,7 @@
 
 [![NuGet](https://img.shields.io/nuget/v/Winche.Rules.svg)](https://www.nuget.org/packages/Winche.Rules)
 
-A **standalone, declarative, JSON-serializable authorization rules engine** for .NET. You define access rules for path-based resources in C# (or load them as data from JSON), and the engine evaluates them **in memory** — no backend call required. It is **backend-agnostic**: you connect it to your own resource store and query model through small adapter ports. Winche.Rules powers Winche.Database's access control, but it carries no dependency on that library and can be used in any .NET project that authorizes resources addressed by path against per-request caller claims.
+A **standalone, declarative, JSON-serializable authorization rules engine** for .NET. You write access rules for path-based resources in a Firestore-style rules language (stored as JSON), and the engine evaluates them **in memory** — no backend call required. It is **backend-agnostic**: you connect it to your own resource store and query model through small adapter ports. Winche.Rules powers Winche.Database's access control, but it carries no dependency on that library and can be used in any .NET project that authorizes resources addressed by path against per-request caller claims.
 
 A "resource" here is anything you can address by a path — a record, a file, a row, an object — represented to the engine as a map of fields.
 
@@ -13,7 +13,7 @@ A "resource" here is anything you can address by a path — a record, a file, a 
 1. [Core ideas](#core-ideas)
 2. [How it works](#how-it-works)
 3. [The value model](#the-value-model-rulevalue)
-4. [Defining rules](#defining-rules-rulesetbuilder--expr)
+4. [Defining rules](#defining-rules)
 5. [The engine](#the-engine-ruleengine)
 6. [Dependency injection](#dependency-injection-addwincherules)
 7. [Hot-swapping rules at runtime](#hot-swapping-rules-at-runtime)
@@ -103,129 +103,54 @@ Numbers compare across `Int`/`Double` by numeric value. Comparison across other 
 
 ---
 
-## Defining rules (`RuleSetBuilder` + `Expr`)
+## Defining rules
 
-### RuleSetBuilder
+Rules are written in the rules language (see [Rules as text](#rules-as-text-310)) and parsed into a
+`RuleSet` with `RuleText.ParseRuleSet`. In a Winche app they are edited in the console or deployed with
+`winche rules deploy`; there is no C# builder (4.0.0 made `RuleSetBuilder` and `Expr` internal), so a
+ruleset always has one source you can read, review and version.
 
-Rules are built with the fluent `RuleSetBuilder.Build` API, which returns a `RuleSet`. Each `Match` takes a path pattern and a configuration callback. Patterns support:
+```csharp
+using Winche.Rules;
+using Winche.Rules.Text;
+
+RuleSet rules = RuleText.ParseRuleSet("""
+    match users/{userId} {
+      // Owner can read their own resource
+      allow read: if resource.ownerId == request.auth.uid;
+      // Owner can write (create/update/delete) to their own path
+      allow write: if request.auth.uid == userId;
+
+      // Nested match — public posts under each user
+      match posts/{postId} {
+        allow read;
+      }
+    }
+    """);
+```
+
+Path patterns support:
 
 - **Literal segments** — `users`
-- **Single-segment capture** — `{userId}` (binds one path segment to a param)
+- **Single-segment capture** — `{userId}` (binds one path segment to a variable)
 - **Recursive capture** — `{doc=**}`, one per path (counting the parents of nested matches). At the end
   (`users/{rest=**}`) it matches one or more segments — the rest of the path at any depth. At the start or in the
   middle (`{path=**}/posts/{postId}`, 3.1.0) it matches zero or more, so it covers `posts` under any parent,
   including a top-level one; its capture is those segments as a path.
 
-`Allow` takes a set of operations and a condition expression. Use `RuleOperations.Read` (= `get` + `list`), `RuleOperations.Write` (= `create` + `update` + `delete`), `RuleOperations.All`, or `RuleOperations.Of(...)` for an explicit set.
+Conditions can use `resource` (the **existing** resource), `request.resource` (the **incoming**, post-write
+resource), `request.auth` (caller claims: `uid`, `token.role`, …), `request.time`, `request.method`, path
+captures, literals, `exists(path)` / `get(path)` (need an `IRuleResourceProvider`) and the functions below.
 
-```csharp
-using Winche.Rules;
-using Winche.Rules.Expressions;
-
-RuleSet rules = RuleSetBuilder.Build(r =>
-    r.Match("users/{userId}", u =>
-    {
-        // Owner can read their own resource
-        u.Allow(RuleOperations.Read,  Expr.Resource("ownerId").Eq(Expr.Auth("uid")));
-        // Owner can write (create/update/delete) to their own path
-        u.Allow(RuleOperations.Write, Expr.Auth("uid").Eq(Expr.Param("userId")));
-
-        // Nested match — public posts under each user
-        u.Match("posts/{postId}", p =>
-            p.Allow(RuleOperations.Read, Expr.Const(true)));
-    }));
-```
-
-### The `Expr` vocabulary
-
-`Expr` is a static fluent factory for building condition expressions (all nodes derive from `RuleExpression`).
-
-**Roots**:
-
-| Factory | What it maps to |
-| - | - |
-| `Expr.Resource(...)` | `resource` then the given field path — the **existing** resource |
-| `Expr.Request(...)` | `request` then the given path |
-| `Expr.RequestResource(...)` | `request.resource` then the given path — the **incoming** (post-write) resource |
-| `Expr.Auth(...)` | `request.auth` then the given path — caller claims (`uid`, `token.role`, …) |
-| `Expr.Param("userId")` | A path-capture variable (`{userId}` from the match pattern) |
-| `Expr.Time()` | `request.time` |
-| `Expr.Method()` | `request.method` |
-| `Expr.Const(value)` | A literal (`bool`, `string`, `long`, or `double`) |
-| `Expr.Value(ruleValue)` | A literal from a `RuleValue` |
-| `Expr.Null` | The null literal |
-
-**Navigation** (on any expression)
-
-```csharp
-expr.Field("fieldName")          // member access: expr.fieldName
-expr.Index(indexExpr)            // index access:  expr[indexExpr]
-```
-
-**Comparisons** (extension methods, return a new expression)
-
-```csharp
-expr.Eq(other)   expr.Ne(other)
-expr.Lt(other)   expr.Le(other)
-expr.Gt(other)   expr.Ge(other)
-// Overloads accept a string, long, or bool constant directly:
-Expr.Auth("uid").Eq("alice")
-```
-
-**Membership and logic**:
-
-```csharp
-item.In(collection)              // item in list-or-map
-expr.And(other)                  // binary AND
-expr.Or(other)                   // binary OR
-expr.Not()                       // logical NOT
-Expr.All(expr1, expr2, ...)      // n-ary AND (vacuously true when empty)
-Expr.Any(expr1, expr2, ...)      // n-ary OR  (vacuously false when empty)
-```
-
-**Ternary**:
-
-```csharp
-new ConditionalExpression(condition, thenExpr, elseExpr)
-```
-
-**Built-in functions**:
-
-```csharp
-Expr.Exists(pathExpr)            // exists(path) — requires IRuleResourceProvider
-Expr.Get(pathExpr)               // get(path)    — requires IRuleResourceProvider
-Expr.Size(valueExpr)             // size(string|list|map)
-```
-
-**Examples**:
-
-```csharp
-// resource.public == true || resource.ownerId == request.auth.uid
-Expr.Any(
-    Expr.Resource("public").Eq(true),
-    Expr.Resource("ownerId").Eq(Expr.Auth("uid")))
-
-// Guard against unauthenticated callers before reading auth.uid
-Expr.All(
-    Expr.Auth().Ne(Expr.Null),
-    Expr.Resource("ownerId").Eq(Expr.Auth("uid")))
-
-// request.auth.uid in resource.members
-Expr.Auth("uid").In(Expr.Resource("members"))
-
-// size(resource.tags) <= 10
-Expr.Size(Expr.Resource("tags")).Le(Expr.Const(10L))
-
-// Incoming resource must set ownerId to the caller's uid
-Expr.RequestResource("ownerId").Eq(Expr.Auth("uid"))
-```
+A `RuleSet` from anywhere else (JSON you stored, say) can be checked with
+`RuleSetValidation.Validate(ruleSet)`, which returns every structural problem (bad path, a nested match under a
+recursive wildcard, two recursive wildcards in one path).
 
 ---
 
 ## Functions (3.1.0)
 
-Besides `exists(path)` / `get(path)`, conditions can call these pure functions (each also has a C#
-helper on `RuleExpression`, e.g. `.Keys().HasOnly("a", "b")`):
+Besides `exists(path)` / `get(path)`, conditions can call these pure functions:
 
 | Text | Meaning |
 | --- | --- |
@@ -341,8 +266,11 @@ The `Winche.Rules.DependencyInjection` namespace registers a configured `RuleEng
 ```csharp
 using Winche.Rules.DependencyInjection;
 
-var ruleset = RuleSetBuilder.Build(r => r.Match("users/{userId}", u =>
-    u.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
+var ruleset = RuleText.ParseRuleSet("""
+    match users/{userId} {
+      allow read: if resource.ownerId == request.auth.uid;
+    }
+    """);
 
 services.AddWincheRules(o => o
     .WithMutableRuleSetRepository(ruleset)   // hot-swappable; or WithStaticRuleSetRepository(ruleset) for a frozen engine
@@ -405,8 +333,11 @@ with its own ruleset, its own `IRuleValueComparer`, and (when mutable) its own `
 using Microsoft.Extensions.DependencyInjection;
 using Winche.Rules.DependencyInjection;
 
-var documentsRules = RuleSetBuilder.Build(r => r.Match("documents/{id}", d =>
-    d.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
+var documentsRules = RuleText.ParseRuleSet("""
+    match documents/{id} {
+      allow read: if resource.ownerId == request.auth.uid;
+    }
+    """);
 
 services.AddWincheRules("documents", o => o
     .WithMutableRuleSetRepository(documentsRules)
@@ -548,12 +479,14 @@ using Winche.Rules;
 using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
 using Winche.Rules.Querying;
+using Winche.Rules.Text;
 
 // Rule: allow read if resource.ownerId == request.auth.uid
-RuleSet rules = RuleSetBuilder.Build(r =>
-    r.Match("users/{userId}", u =>
-        u.Allow(RuleOperations.Read,
-            Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
+RuleSet rules = RuleText.ParseRuleSet("""
+    match users/{userId} {
+      allow read: if resource.ownerId == request.auth.uid;
+    }
+    """);
 
 // Map each of your query's where-clauses to a QueryConstraint.
 // The field path matches how your rule navigates the resource (here: resource.ownerId).
@@ -594,7 +527,7 @@ The analyzer **rejects** (returns `false`) for any rule or query it cannot prove
 
 ## Cross-resource conditions (`get` / `exists`)
 
-Rules can reference **other** resources via `Expr.Get` and `Expr.Exists`. You back these by implementing `IRuleResourceProvider`:
+Rules can reference **other** resources via `get(path)` and `exists(path)`. You back these by implementing `IRuleResourceProvider`:
 
 ```csharp
 using Winche.Rules;
@@ -618,11 +551,11 @@ Pass an instance as `RuleRequest.Provider` (or `RuleContext.Provider`). When a r
 
 ```csharp
 // Rule: allow read if the user's team resource is active
-RuleSet rules = RuleSetBuilder.Build(r =>
-    r.Match("docs/{id}", d =>
-        d.Allow(RuleOperations.Read, Expr.All(
-            Expr.Exists(Expr.Const("teams/t1")),
-            Expr.Get(Expr.Const("teams/t1")).Field("active").Eq(true)))));
+RuleSet rules = RuleText.ParseRuleSet("""
+    match docs/{id} {
+      allow read: if exists('teams/t1') && get('teams/t1').active == true;
+    }
+    """);
 
 var engine = new RuleEngine(new StaticRuleSetRepository(rules), new DefaultRuleValueComparer());
 bool allowed = await engine.AllowsAsync(RuleOperation.Get, "docs/d1", new RuleRequest
@@ -671,7 +604,7 @@ string json = RuleJson.Serialize(rules);
 RuleSet restored = RuleJson.DeserializeRuleSet(json);
 
 // Expression round-trip
-string exprJson          = RuleJson.Serialize(Expr.Resource("ownerId").Eq(Expr.Auth("uid")));
+string exprJson          = RuleJson.Serialize(RuleText.Parse("resource.ownerId == request.auth.uid"));
 RuleExpression restored2 = RuleJson.DeserializeExpr(exprJson);
 ```
 
@@ -706,7 +639,7 @@ The engine needs a few adapters, all of which you provide:
 
 4. **Comparison → `IRuleValueComparer`** *(optional)* — supply one when the engine must match your store's exact equality/ordering semantics.
 
-The engine fits any system that has **resources addressed by path** and **per-request caller claims**. The caller claims shape is whatever you put in `request.auth`; the conditions reference it with `Expr.Auth(...)`.
+The engine fits any system that has **resources addressed by path** and **per-request caller claims**. The caller claims shape is whatever you put in `request.auth`; the conditions reference it as `request.auth`.
 
 ---
 
@@ -738,8 +671,7 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 | `AllowRule` | `(IReadOnlyList<RuleOperation> Operations, RuleExpression Condition)` |
 | `RuleOperation` | Enum: `Get`, `List`, `Create`, `Update`, `Delete`. |
 | `RuleOperations` | Static sets: `Read`, `Write`, `All`, `Of(params RuleOperation[])`. |
-| `RuleSetBuilder` | `static Build(Action<RuleSetBuilder>)` → `RuleSet`, plus `Match(path, configure)`. |
-| `MatchBuilder` | `Allow(IEnumerable<RuleOperation>, RuleExpression)` + `Match(path, configure)`. |
+| `RuleSetValidation` | `static Validate(RuleSet)` → `IReadOnlyList<RuleValidationIssue>` `(string? Path, string Message)`; empty when valid. |
 | `RuleEngine` | `RuleEngine(IRuleSetRepository, IRuleValueComparer)`. `Task<bool> AllowsAsync(RuleOperation, string path, RuleRequest, CancellationToken)`; `bool Allows(QueryConstraints, RuleRequest)`. Reads the ruleset from the repository per call. |
 | `IRuleSetRepository` | Read side of the ruleset seam: `RuleSet Current { get; }`. |
 | `IMutableRuleSetRepository` | Write side: `IRuleSetRepository` + `void Update(RuleSet)`. |
@@ -764,8 +696,6 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 | `ConditionalExpression` | `(RuleExpression Condition, RuleExpression Then, RuleExpression Else)` |
 | `CallExpression` | `(string Name, IReadOnlyList<RuleExpression> Args)` |
 | `ComparisonOperator` | Enum: `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`. |
-| `Expr` | Static fluent factory — see [Defining rules](#defining-rules-rulesetbuilder--expr). |
-| `RuleExprExtensions` | Extension methods: `Field`, `Index`, `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, `In`, `And`, `Or`, `Not`. |
 
 ### `Winche.Rules.Evaluation`
 

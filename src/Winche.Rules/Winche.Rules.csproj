@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <PackageId>Winche.Rules</PackageId>
-    <Description>A declarative, JSON-serializable authorization rules engine. Define document access rules in C# (or load them as data), evaluate them in memory, and analyze queries against them. Backend-agnostic via small adapter ports.</Description>
+    <Description>A declarative, JSON-serializable authorization rules engine. Write document access rules in a Firestore-style rules language (or load them as JSON), evaluate them in memory, and analyze queries against them. Backend-agnostic via small adapter ports.</Description>
     <PackageTags>authorization;rules;access-control;security-rules;dotnet</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsPackable>true</IsPackable>
@@ -10,6 +10,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Winche.Rules.Tests" />
+    <!-- Downstream test suites build fixtures with the internal RuleSetBuilder/Expr; apps write rule text. -->
+    <InternalsVisibleTo Include="Winche.Database.Tests" />
+    <InternalsVisibleTo Include="Winche.Database.IntegrationTests" />
+    <InternalsVisibleTo Include="Winche.Storage.Tests" />
+    <InternalsVisibleTo Include="Winche.Console.Tests" />
   </ItemGroup>
 
   <ItemGroup>

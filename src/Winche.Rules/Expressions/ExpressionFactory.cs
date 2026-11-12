@@ -12,7 +12,7 @@ namespace Winche.Rules.Expressions;
 ///     Expr.Resource("ownerId").Eq(Expr.Auth("uid")))
 /// </code>
 /// </summary>
-public static class Expr
+internal static class Expr
 {
     /// <summary>
     /// A literal from a <see cref="RuleValue"/>.
@@ -130,7 +130,7 @@ public static class Expr
 /// <summary>
 /// Fluent combinators over <see cref="RuleExpression"/>.
 /// </summary>
-public static class RuleExprExtensions
+internal static class RuleExprExtensions
 {
     /// <summary>
     /// Member access <c>this.name</c>.

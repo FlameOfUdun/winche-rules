@@ -16,7 +16,7 @@ namespace Winche.Rules;
 ///     }));
 /// </code>
 /// </summary>
-public sealed class RuleSetBuilder
+internal sealed class RuleSetBuilder
 {
     private readonly List<MatchBlock> _matches = [];
 
@@ -46,7 +46,7 @@ public sealed class RuleSetBuilder
 /// <summary>
 /// Fluent builder for a <c>match</c> block (allow rules + nested matches).
 /// </summary>
-public sealed class MatchBuilder
+internal sealed class MatchBuilder
 {
     private readonly string _path;
     private readonly List<AllowRule> _allow = [];

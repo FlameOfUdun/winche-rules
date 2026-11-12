@@ -5,6 +5,7 @@ using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
 using Winche.Rules.Json;
 using Winche.Rules.Querying;
+using Winche.Rules.Text;
 
 // =============================================================================
 // Winche.Rules — feature walkthrough
@@ -17,32 +18,30 @@ using Winche.Rules.Querying;
 
 // ----- RuleSets --------------------------------------------------------------
 
+// Rules are written in the rules language (the same text the console's editor and `winche rules deploy`
+// use) and parsed into a RuleSet.
 // "documents": owners can always read/write their own doc. Public reads are only
 // allowed in v2 — we start on v1 (owner-only) and hot-swap to v2 later.
 // "reports/{id}" shows a cross-resource condition backed by IRuleResourceProvider.
-static RuleSet DocumentsRules(bool allowPublicReads) => RuleSetBuilder.Build(r =>
-{
-    r.Match("documents/{docId}", d =>
-    {
-        RuleExpression read = allowPublicReads
-            ? Expr.Any(Expr.Resource("public").Eq(true), Expr.Resource("ownerId").Eq(Expr.Auth("uid")))
-            : Expr.Resource("ownerId").Eq(Expr.Auth("uid"));
-
-        d.Allow(RuleOperations.Read, read);
-        d.Allow(RuleOperations.Write, Expr.RequestResource("ownerId").Eq(Expr.Auth("uid")));
-    });
+static RuleSet DocumentsRules(bool allowPublicReads) => RuleText.ParseRuleSet($$"""
+    match documents/{docId} {
+      allow read: if {{(allowPublicReads ? "resource.public == true || " : "")}}resource.ownerId == request.auth.uid;
+      allow write: if request.resource.ownerId == request.auth.uid;
+    }
 
     // A report is readable only if team "teams/t1" exists and is active.
-    r.Match("reports/{reportId}", m => m.Allow(RuleOperations.Read, Expr.All(
-        Expr.Exists(Expr.Const("teams/t1")),
-        Expr.Get(Expr.Const("teams/t1")).Field("active").Eq(true))));
-});
+    match reports/{reportId} {
+      allow read: if exists('teams/t1') && get('teams/t1').active == true;
+    }
+    """);
 
 // "orders": a shipped order is readable. Its engine uses a case-insensitive
 // comparer, so the rule's "SHIPPED" matches a resource whose status is "shipped".
-static RuleSet OrdersRules() => RuleSetBuilder.Build(r =>
-    r.Match("orders/{orderId}", o =>
-        o.Allow(RuleOperations.Read, Expr.Resource("status").Eq(Expr.Const("SHIPPED")))));
+static RuleSet OrdersRules() => RuleText.ParseRuleSet("""
+    match orders/{orderId} {
+      allow read: if resource.status == 'SHIPPED';
+    }
+    """);
 
 // ----- Composition root ------------------------------------------------------
 
