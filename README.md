@@ -169,6 +169,35 @@ For `list` queries, a condition that doesn't depend on the documents — only on
 bound by the collection path, literals and these functions — is now simply evaluated (e.g.
 `request.auth.uid in ['admin1', 'admin2']`), instead of being rejected as unprovable.
 
+## Readable forms (4.1.0)
+
+The everyday checks have short forms. Each is shorthand for a method chain — it parses to the same
+expression, so stored rules, the engine and query analysis are unchanged, and both spellings work:
+
+| Readable form | Same as |
+| --- | --- |
+| `'role' not in request.resource.data` | `!('role' in request.resource.data)` |
+| `request.resource.data has only ['name', 'email']` | `request.resource.data.keys().hasOnly(['name', 'email'])` |
+| `request.resource.data has all ['name']` | `request.resource.data.keys().hasAll(['name'])` |
+| `request.auth.token has any ['admin']` | `request.auth.token.keys().hasAny(['admin'])` |
+| `changes only ['name', 'photoUrl']` | `request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photoUrl'])` |
+| `changes all [...]` / `changes any [...]` | `….affectedKeys().hasAll([...])` / `….hasAny([...])` |
+
+```text
+match users/{uid} {
+  allow create: if request.auth.uid == uid
+    && request.resource.data has only ['name', 'email']
+    && 'role' not in request.resource.data;
+  allow update: if request.auth.uid == uid && changes only ['name', 'photoUrl'];
+}
+```
+
+`has` is about a **map's keys** (a document's fields, a token's claims); for a list use `x in list` or the
+methods. `changes` compares the document after the write with the one before (database rules). They bind like
+comparisons: looser than `!`, tighter than `&&`. Only these word pairs are special — `has`, `changes`, `not`,
+`only`, `all` and `any` alone are still ordinary names. `RuleText.Format` / `FormatRuleSet` write the readable
+forms; pass `readable: false` for the chains.
+
 ## Rules as text (3.1.0)
 
 `RuleText.Parse(string)` and `RuleText.Format(RuleExpression)` convert conditions to and from a text form
@@ -176,12 +205,13 @@ close to Firestore's rules language — what the Winche console's rules editor u
 
 ```text
 request.auth.token.sub == userId
-  && request.resource.keys().hasOnly(['name', 'email'])     // comments run to the end of the line
+  && request.resource.data has only ['name', 'email']      // comments run to the end of the line
   && request.resource.name is string
-  && !('role' in request.resource.diff(resource).affectedKeys())
+  && changes only ['name', 'email']
 ```
 
-- Operators, loosest first: `c ? a : b`, `||`, `&&`, comparisons `== != < <= > >=` / `in` / `is`, `!`,
+- Operators, loosest first: `c ? a : b`, `||`, `&&`, comparisons `== != < <= > >=` / `in` / `not in` / `is` /
+  `has only|all|any` / `changes only|all|any`, `!`,
   then `.field`, `[index]` and method calls. `x.f(a)` is the same as `f(x, a)`.
 - Literals: numbers, `'strings'` / `"strings"`, `true`, `false`, `null`, lists `[...]` and maps `{'k': v}` of
   constants, `timestamp('2027-01-01T00:00:00Z')`, `path('users/u1')`, `bytes('AAEC')`, `float('1e3')`.
@@ -195,7 +225,7 @@ A whole ruleset can be written the same way, as one file — `RuleText.ParseRule
 match users/{uid} {
   allow read: if request.auth.uid == uid;
   allow create: if request.auth.uid == uid
-    && request.resource.data.keys().hasOnly(['name', 'email']);
+    && request.resource.data has only ['name', 'email'];
 
   match notes/{noteId} {
     allow read, write: if request.auth.uid == uid;

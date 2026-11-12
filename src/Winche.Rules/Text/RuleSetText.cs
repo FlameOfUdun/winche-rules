@@ -27,37 +27,41 @@ public static partial class RuleText
     /// <summary>Parses a rules file. Throws <see cref="RuleSyntaxException"/> with the position of the first problem.</summary>
     public static RuleSet ParseRuleSet(string text) => new FileParser(text).Parse();
 
-    /// <summary>Writes a ruleset as a rules file.</summary>
-    public static string FormatRuleSet(RuleSet ruleSet)
+    /// <summary>Writes a ruleset as a rules file, using the readable forms (<c>not in</c>, <c>has only</c>, <c>changes only</c>).</summary>
+    public static string FormatRuleSet(RuleSet ruleSet) => FormatRuleSet(ruleSet, readable: true);
+
+    /// <summary>Writes a ruleset as a rules file; <paramref name="readable"/> false writes method chains instead.</summary>
+    public static string FormatRuleSet(RuleSet ruleSet, bool readable)
     {
+        var writer = new Writer(readable);
         var sb = new StringBuilder();
         for (var i = 0; i < ruleSet.Matches.Count; i++)
         {
             if (i > 0) sb.Append('\n');
-            WriteBlock(sb, ruleSet.Matches[i], 0);
+            WriteBlock(sb, writer, ruleSet.Matches[i], 0);
         }
         return sb.ToString();
     }
 
     private const int LineWidth = 100;
 
-    private static void WriteBlock(StringBuilder sb, MatchBlock block, int depth)
+    private static void WriteBlock(StringBuilder sb, Writer writer, MatchBlock block, int depth)
     {
         var pad = new string(' ', depth * 2);
         sb.Append(pad).Append("match ").Append(block.Path).Append(" {\n");
         foreach (var allow in block.Allow)
         {
             var head = $"{pad}  allow {Operations(allow.Operations)}: if ";
-            var condition = Format(allow.Condition);
+            var condition = writer.Write(allow.Condition, 0);
             // A long condition made of && parts goes one part per line.
             if (head.Length + condition.Length + 1 > LineWidth && allow.Condition is AndExpression { Operands.Count: > 1 } and)
-                condition = string.Join($"\n{pad}    && ", and.Operands.Select(o => Write(o, 4)));
+                condition = string.Join($"\n{pad}    && ", and.Operands.Select(o => writer.Write(o, 4)));
             sb.Append(head).Append(condition).Append(";\n");
         }
         foreach (var nested in block.Matches)
         {
             sb.Append('\n');
-            WriteBlock(sb, nested, depth + 1);
+            WriteBlock(sb, writer, nested, depth + 1);
         }
         sb.Append(pad).Append("}\n");
     }

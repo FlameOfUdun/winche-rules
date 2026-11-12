@@ -57,8 +57,7 @@ public class RuleSetTextTests
         Assert.Equal("""
             match users/{uid} {
               allow read: if request.auth.uid == uid;
-              allow create: if request.auth.uid == uid
-                && request.resource.data.keys().hasOnly(['name', 'email']);
+              allow create: if request.auth.uid == uid && request.resource.data has only ['name', 'email'];
               allow update, delete: if request.auth.uid == uid;
 
               match notes/{noteId} {
@@ -78,11 +77,11 @@ public class RuleSetTextTests
     {
         var rs = RuleText.ParseRuleSet("""
             match profiles/{uid} {
-              allow create: if request.auth.uid == uid && request.resource.data.keys().hasOnly(['name', 'email', 'photo']) && request.resource.data.name is string && request.resource.data.name.size() <= 50;
+              allow create: if request.auth.uid == uid && request.resource.data.keys().hasOnly(['name', 'email', 'photo']) && request.resource.data.name is string && request.resource.data.name.size() <= 50 && request.resource.data.photo is string;
             }
             """);
         var text = RuleText.FormatRuleSet(rs);
-        Assert.Contains("allow create: if request.auth.uid == uid\n    && request.resource.data.keys()", text);
+        Assert.Contains("allow create: if request.auth.uid == uid\n    && request.resource.data has only ['name', 'email', 'photo']", text);
         Assert.Equal(rs, RuleText.ParseRuleSet(text));
     }
 

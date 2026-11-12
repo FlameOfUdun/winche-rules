@@ -25,17 +25,22 @@ public sealed class RuleSyntaxException(string message, int offset, int line, in
 /// The text form of rule conditions, close to Firestore's rules language:
 /// <code>
 /// request.auth.token.sub == userId
-///   &amp;&amp; request.resource.data.keys().hasOnly(['name', 'email'])
+///   &amp;&amp; request.resource.data has only ['name', 'email']
 ///   &amp;&amp; request.resource.data.name is string
-///   &amp;&amp; !('role' in request.resource.data.diff(resource.data).affectedKeys())
+///   &amp;&amp; 'role' not in request.resource.data
+///   &amp;&amp; changes only ['name']
 /// </code>
 /// <para>Operators, loosest first: <c>c ? a : b</c>, <c>||</c>, <c>&amp;&amp;</c>, then the comparisons
-/// <c>== != &lt; &lt;= &gt; &gt;=</c>, <c>in</c> and <c>x is type</c>, then <c>!</c>, then <c>.field</c>,
+/// <c>== != &lt; &lt;= &gt; &gt;=</c>, <c>in</c>, <c>not in</c>, <c>x is type</c>, <c>map has only|all|any [...]</c>
+/// and <c>changes only|all|any [...]</c>, then <c>!</c>, then <c>.field</c>,
 /// <c>[index]</c> and method calls. <c>x.f(a)</c> is the function <c>f(x, a)</c>, so both spellings work.
 /// Literals: numbers, <c>'strings'</c> or <c>"strings"</c>, <c>true</c>, <c>false</c>, <c>null</c>, lists
 /// <c>[...]</c> and maps <c>{'k': v}</c> of literals, and <c>timestamp('ISO-8601')</c>, <c>path('a/b')</c>,
 /// <c>bytes('base64')</c>, <c>float('1e3')</c> (finite only: rules are stored as JSON). A field name that isn't an identifier is written in backticks.</para>
-/// <para><see cref="Format"/> and <see cref="Parse"/> round-trip: parsing formatted text gives back the same
+/// <para>The readable forms are shorthand: <c>x not in y</c> is <c>!(x in y)</c>, <c>m has only [...]</c> is
+/// <c>m.keys().hasOnly([...])</c> (likewise <c>all</c> → <c>hasAll</c>, <c>any</c> → <c>hasAny</c>), and <c>changes only [...]</c> is
+/// <c>request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])</c>. They parse to the same expression.</para>
+/// <para><see cref="Format(RuleExpression)"/> and <see cref="Parse"/> round-trip: parsing formatted text gives back the same
 /// expression, up to flattening nested <c>&amp;&amp;</c>/<c>||</c> and writing empty ones as <c>true</c>/<c>false</c>.</para>
 /// </summary>
 public static partial class RuleText
@@ -52,45 +57,85 @@ public static partial class RuleText
     /// <summary>Parses a condition. Throws <see cref="RuleSyntaxException"/> with the position of the first problem.</summary>
     public static RuleExpression Parse(string text) => new Parser(text).ParseAll();
 
-    /// <summary>Writes a condition as text.</summary>
-    public static string Format(RuleExpression expression) => Write(expression, 0);
+    /// <summary>
+    /// Writes a condition as text, using the readable forms where they apply (<c>x not in y</c>,
+    /// <c>map has only [...]</c>, <c>changes only [...]</c>).
+    /// </summary>
+    public static string Format(RuleExpression expression) => Format(expression, readable: true);
+
+    /// <summary>
+    /// Writes a condition as text; <paramref name="readable"/> false writes the method chains instead
+    /// (<c>!(x in y)</c>, <c>map.keys().hasOnly([...])</c>, <c>request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])</c>).
+    /// Both read back as the same expression.
+    /// </summary>
+    public static string Format(RuleExpression expression, bool readable) => new Writer(readable).Write(expression, 0);
+
+    /// <summary><c>request.resource.data.diff(resource.data).affectedKeys()</c> — what <c>changes</c> stands for.</summary>
+    private static CallExpression ChangedKeys() =>
+        new("affectedKeys", [new CallExpression("diff",
+        [
+            new MemberExpression(new MemberExpression(new VarExpression("request"), "resource"), "data"),
+            new MemberExpression(new VarExpression("resource"), "data"),
+        ])]);
+
+    private static readonly CallExpression ChangedKeysShape = ChangedKeys();
+
+    private static string? SetWord(string function) => function switch
+    {
+        "hasOnly" => "only",
+        "hasAll" => "all",
+        "hasAny" => "any",
+        _ => null,
+    };
 
     // ── formatting ──────────────────────────────────────────────────────────
 
-    // Precedence: 1 ternary, 2 or, 3 and, 4 comparison / in / is, 5 unary, 6 postfix, 7 primary.
-    private static string Write(RuleExpression e, int min)
+    /// <summary>Writes expressions as text; <c>readable</c> picks the sugar forms over method chains.</summary>
+    private sealed class Writer(bool readable)
     {
-        var (text, prec) = e switch
+        // Precedence: 1 ternary, 2 or, 3 and, 4 comparison / in / is, 5 unary, 6 postfix, 7 primary.
+        public string Write(RuleExpression e, int min)
         {
-            LiteralExpression l => (Literal(l.Value), l.Value.IsNumber && l.Value.AsNumber < 0 ? 5 : 7),
-            VarExpression v => (Name(v.Name), 7),
-            MemberExpression m => ($"{Write(m.Target, 6)}.{Name(m.Name)}", 6),
-            IndexExpression ix => ($"{Write(ix.Target, 6)}[{Write(ix.Index, 0)}]", 6),
-            CompareExpression c => ($"{Write(c.Left, 5)} {Op(c.Op)} {Write(c.Right, 5)}", 4),
-            InExpression i => ($"{Write(i.Item, 5)} in {Write(i.Collection, 5)}", 4),
-            NotExpression n => ($"!{Write(n.Operand, 5)}", 5),
-            AndExpression { Operands.Count: 0 } => ("true", 7),
-            OrExpression { Operands.Count: 0 } => ("false", 7),
-            AndExpression { Operands.Count: 1 } a => (Write(a.Operands[0], min), 7),
-            OrExpression { Operands.Count: 1 } o => (Write(o.Operands[0], min), 7),
-            AndExpression a => (string.Join(" && ", a.Operands.Select(x => Write(x, 4))), 3),
-            OrExpression o => (string.Join(" || ", o.Operands.Select(x => Write(x, 3))), 2),
-            ConditionalExpression c => ($"{Write(c.Condition, 2)} ? {Write(c.Then, 0)} : {Write(c.Else, 0)}", 1),
-            CallExpression call => Call(call),
-            _ => throw new ArgumentException($"Cannot write a {e.GetType().Name} as text."),
-        };
-        return prec < min ? $"({text})" : text;
-    }
+            var (text, prec) = e switch
+            {
+                LiteralExpression l => (Literal(l.Value), l.Value.IsNumber && l.Value.AsNumber < 0 ? 5 : 7),
+                VarExpression v => (Name(v.Name), 7),
+                MemberExpression m => ($"{Write(m.Target, 6)}.{Name(m.Name)}", 6),
+                IndexExpression ix => ($"{Write(ix.Target, 6)}[{Write(ix.Index, 0)}]", 6),
+                CompareExpression c => ($"{Write(c.Left, 5)} {Op(c.Op)} {Write(c.Right, 5)}", 4),
+                InExpression i => ($"{Write(i.Item, 5)} in {Write(i.Collection, 5)}", 4),
+                NotExpression { Operand: InExpression i } when readable => ($"{Write(i.Item, 5)} not in {Write(i.Collection, 5)}", 4),
+                NotExpression n => ($"!{Write(n.Operand, 5)}", 5),
+                AndExpression { Operands.Count: 0 } => ("true", 7),
+                OrExpression { Operands.Count: 0 } => ("false", 7),
+                AndExpression { Operands.Count: 1 } a => (Write(a.Operands[0], min), 7),
+                OrExpression { Operands.Count: 1 } o => (Write(o.Operands[0], min), 7),
+                AndExpression a => (string.Join(" && ", a.Operands.Select(x => Write(x, 4))), 3),
+                OrExpression o => (string.Join(" || ", o.Operands.Select(x => Write(x, 3))), 2),
+                ConditionalExpression c => ($"{Write(c.Condition, 2)} ? {Write(c.Then, 0)} : {Write(c.Else, 0)}", 1),
+                CallExpression call => Call(call),
+                _ => throw new ArgumentException($"Cannot write a {e.GetType().Name} as text."),
+            };
+            return prec < min ? $"({text})" : text;
+        }
 
-    private static (string, int) Call(CallExpression call)
-    {
-        var args = call.Args;
-        if (call.Name == "is" && args.Count == 2 && args[1] is LiteralExpression { Value.Kind: RuleValueKind.String } t
-            && Evaluation.RuleFunctions.TypeNames.Contains(t.Value.AsString))
-            return ($"{Write(args[0], 5)} is {t.Value.AsString}", 4);
-        if (args.Count >= 1 && (Methods.Contains(call.Name) || (call.Name == "get" && args.Count == 3)))
-            return ($"{Write(args[0], 6)}.{Name(call.Name)}({string.Join(", ", args.Skip(1).Select(a => Write(a, 0)))})", 6);
-        return ($"{Name(call.Name)}({string.Join(", ", args.Select(a => Write(a, 0)))})", 7);
+        private (string, int) Call(CallExpression call)
+        {
+            var args = call.Args;
+            if (readable && args.Count == 2 && SetWord(call.Name) is { } word)
+            {
+                if (args[0].Equals(ChangedKeysShape))
+                    return ($"changes {word} {Write(args[1], 5)}", 4);
+                if (args[0] is CallExpression { Name: "keys", Args.Count: 1 } keys)
+                    return ($"{Write(keys.Args[0], 5)} has {word} {Write(args[1], 5)}", 4);
+            }
+            if (call.Name == "is" && args.Count == 2 && args[1] is LiteralExpression { Value.Kind: RuleValueKind.String } t
+                && Evaluation.RuleFunctions.TypeNames.Contains(t.Value.AsString))
+                return ($"{Write(args[0], 5)} is {t.Value.AsString}", 4);
+            if (args.Count >= 1 && (Methods.Contains(call.Name) || (call.Name == "get" && args.Count == 3)))
+                return ($"{Write(args[0], 6)}.{Name(call.Name)}({string.Join(", ", args.Skip(1).Select(a => Write(a, 0)))})", 6);
+            return ($"{Name(call.Name)}({string.Join(", ", args.Select(a => Write(a, 0)))})", 7);
+        }
     }
 
     private static string Op(ComparisonOperator op) => op switch
@@ -222,7 +267,30 @@ public static partial class RuleText
 
         private RuleExpression Relation()
         {
+            // `changes only|all|any [...]`: the fields an update changes (sugar for
+            // request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])).
+            if (IsWord("changes") && IsSetWord(1))
+            {
+                Next();
+                var fn = SetFunction(Next());
+                return new CallExpression(fn, [ChangedKeys(), Unary()]);
+            }
+
             var left = Unary();
+            // `x not in y` (sugar for !(x in y)).
+            if (IsWord("not") && _i + 1 < _tokens.Count && _tokens[_i + 1].IsWord("in"))
+            {
+                Next();
+                Next();
+                return new NotExpression(new InExpression(left, Unary()));
+            }
+            // `map has only|all|any [...]`: the map's keys (sugar for map.keys().hasOnly([...])).
+            if (IsWord("has") && IsSetWord(1))
+            {
+                Next();
+                var fn = SetFunction(Next());
+                return new CallExpression(fn, [new CallExpression("keys", [left]), Unary()]);
+            }
             if (Peek.Kind == T.Op && Peek.Text is "==" or "!=" or "<" or "<=" or ">" or ">=")
             {
                 var op = Next().Text switch
@@ -248,6 +316,17 @@ public static partial class RuleText
             }
             return left;
         }
+
+        /// <summary>Whether the token <paramref name="ahead"/> places on is an unquoted <c>only</c>, <c>all</c> or <c>any</c>.</summary>
+        private bool IsSetWord(int ahead) =>
+            _i + ahead < _tokens.Count && _tokens[_i + ahead] is { Kind: T.Ident, Quoted: false, Text: "only" or "all" or "any" };
+
+        private static string SetFunction(Token word) => word.Text switch
+        {
+            "only" => "hasOnly",
+            "all" => "hasAll",
+            _ => "hasAny",
+        };
 
         private RuleExpression Unary()
         {

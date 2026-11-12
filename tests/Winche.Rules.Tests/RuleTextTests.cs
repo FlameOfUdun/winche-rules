@@ -32,10 +32,14 @@ public class RuleTextTests
     {
         Assert.Equal("request.auth.token.sub == userId",
             RuleText.Format(Expr.Auth("token", "sub").Eq(Expr.Param("userId"))));
-        Assert.Equal("request.resource.keys().hasOnly(['name', 'email'])",
+        Assert.Equal("request.resource has only ['name', 'email']",
             RuleText.Format(Expr.Request("resource").Keys().HasOnly("name", "email")));
-        Assert.Equal("!(collection in ['analytics', 'notificationLog'])",
+        Assert.Equal("request.resource.keys().hasOnly(['name', 'email'])",
+            RuleText.Format(Expr.Request("resource").Keys().HasOnly("name", "email"), readable: false));
+        Assert.Equal("collection not in ['analytics', 'notificationLog']",
             RuleText.Format(Expr.Param("collection").In(Expr.Strings("analytics", "notificationLog")).Not()));
+        Assert.Equal("!(collection in ['analytics', 'notificationLog'])",
+            RuleText.Format(Expr.Param("collection").In(Expr.Strings("analytics", "notificationLog")).Not(), readable: false));
         Assert.Equal("request.resource.age is int", RuleText.Format(Expr.Request("resource", "age").Is("int")));
         Assert.Equal("(a || b) && c", RuleText.Format(Expr.All(Expr.Any(Expr.Var("a"), Expr.Var("b")), Expr.Var("c"))));
         Assert.Equal("a || b && c", RuleText.Format(Expr.Any(Expr.Var("a"), Expr.All(Expr.Var("b"), Expr.Var("c")))));
@@ -47,8 +51,10 @@ public class RuleTextTests
     }
 
     [Theory]
-    [InlineData("request.auth.token.sub == userId && request.resource.keys().hasOnly(['name', 'email'])")]
-    [InlineData("!('role' in request.resource.diff(resource).affectedKeys())")]
+    [InlineData("request.auth.token.sub == userId && request.resource has only ['name', 'email']")]
+    [InlineData("'role' not in request.resource.data && changes only ['name'] && request.auth.token has any ['admin']")]
+    [InlineData("!(changes any ['role', 'ownerId']) && (x not in [1, 2]) == false")]
+    [InlineData("'role' not in request.resource.diff(resource).affectedKeys()")]
     [InlineData("request.time < timestamp('2027-01-01T00:00:00.0000000+00:00')")]
     [InlineData("resource.blob == bytes('AAEC') && resource.ref == path('a/b') && resource.n == float('1e3')")]
     [InlineData("`is`(x) && `true` == `null`.`in`")]
