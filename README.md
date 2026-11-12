@@ -4,6 +4,9 @@
 
 A **standalone, declarative, JSON-serializable authorization rules engine** for .NET. You write access rules for path-based resources in a Firestore-style rules language (stored as JSON), and the engine evaluates them **in memory** — no backend call required. It is **backend-agnostic**: you connect it to your own resource store and query model through small adapter ports. Winche.Rules powers Winche.Database's access control, but it carries no dependency on that library and can be used in any .NET project that authorizes resources addressed by path against per-request caller claims.
 
+> **Writing rules?** Start with the **[Rules Language Guide](GUIDE.md)** — the syntax, what conditions can use,
+> common patterns, how queries are checked, testing, and coming from Firebase. This README is the .NET API.
+
 A "resource" here is anything you can address by a path — a record, a file, a row, an object — represented to the engine as a map of fields.
 
 ---
