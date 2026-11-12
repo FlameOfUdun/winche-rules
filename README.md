@@ -201,6 +201,16 @@ comparisons: looser than `!`, tighter than `&&`. Only these word pairs are speci
 `only`, `all` and `any` alone are still ordinary names. `RuleText.Format` / `FormatRuleSet` write the readable
 forms; pass `readable: false` for the chains.
 
+## Functions and paths (4.1.0)
+
+Rules files can define functions — `function isOwner(uid) { let me = request.auth.uid; return me == uid; }`, at the
+top level or inside a `match` — stored with the ruleset (`RuleSet.Functions`, `MatchBlock.Functions`; omitted from
+JSON when there are none) and expanded into each condition before evaluation and query analysis. Paths can be
+built: `get(/users/$(request.auth.uid))` is `get(path('users', request.auth.uid))` (Firebase's
+`/databases/$(database)/documents/` prefix is ignored). `RuleSetValidation.Validate` checks function names,
+argument counts and recursion; `RuleSetValidation.UnknownFunctions` lists calls to functions that don't exist where
+they're called. See the [guide](GUIDE.md#writing-your-own-functions).
+
 ## Rules as text (3.1.0)
 
 `RuleText.Parse(string)` and `RuleText.Format(RuleExpression)` convert conditions to and from a text form

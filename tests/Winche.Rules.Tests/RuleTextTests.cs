@@ -43,7 +43,9 @@ public class RuleTextTests
         Assert.Equal("request.resource.age is int", RuleText.Format(Expr.Request("resource", "age").Is("int")));
         Assert.Equal("(a || b) && c", RuleText.Format(Expr.All(Expr.Any(Expr.Var("a"), Expr.Var("b")), Expr.Var("c"))));
         Assert.Equal("a || b && c", RuleText.Format(Expr.Any(Expr.Var("a"), Expr.All(Expr.Var("b"), Expr.Var("c")))));
-        Assert.Equal("exists(path('users/u1'))", RuleText.Format(Expr.Exists(Expr.Value(RuleValue.Path("users/u1")))));
+        Assert.Equal("exists(/users/u1)", RuleText.Format(Expr.Exists(Expr.Value(RuleValue.Path("users/u1")))));
+        Assert.Equal("exists(path('users/u1'))", RuleText.Format(Expr.Exists(Expr.Value(RuleValue.Path("users/u1"))), readable: false));
+        Assert.Equal("(/a/b.c).d == (/x/$(y)).size()", RuleText.Format(RuleText.Parse("path('a/b.c').d == path('x', y).size()")));
         Assert.Equal("resource.`odd name`.`in`", RuleText.Format(Expr.Resource("odd name", "in")));
         Assert.Equal("1.0 == 1 && -2 < x", RuleText.Format(Expr.All(Expr.Const(1.0).Eq(Expr.Const(1L)), Expr.Const(-2L).Lt(Expr.Var("x")))));
         Assert.Equal("true", RuleText.Format(Expr.All()));

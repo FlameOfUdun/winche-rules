@@ -13,6 +13,7 @@ This guide is about **writing rules**. For the .NET engine API, see the [README]
 - [Values](#values)
 - [Operators](#operators)
 - [Functions](#functions)
+- [Writing your own functions](#writing-your-own-functions)
 - [Common patterns](#common-patterns)
 - [Queries: rules are not filters](#queries-rules-are-not-filters)
 - [When a condition fails to evaluate](#when-a-condition-fails-to-evaluate)
@@ -155,7 +156,7 @@ Every `{name}` in the enclosing matches is a variable: in `match users/{uid}/not
 | lists | `['admin', 'staff']` |
 | maps | `{'a': 1, 'b': [true, null]}` |
 | timestamps | `timestamp('2027-01-01T00:00:00Z')` |
-| paths | `path('teams/t1')` |
+| paths | `/teams/t1`, `/users/$(request.auth.uid)` — see [Building paths](#building-paths) (or `path('teams/t1')`) |
 | bytes | `bytes('AAEC')` (base64) |
 
 A field whose name isn't a plain identifier goes in backticks: ``resource.`first name` ``.
@@ -215,13 +216,66 @@ Methods can also be written as functions: `x.size()` is `size(x)`.
 | `s.lower()` / `s.upper()` | case conversion |
 | `m.get('key', default)` | the value at a key, or `default` when it's missing |
 
-`get()` and `exists()` take a fixed path — `get(path('teams/t1'))` or a field holding a path value. Building a
-path from parts (`'teams/' + id`) isn't supported yet.
+### Building paths
+
+`get()` and `exists()` take a path. Write one like a `match` path with a leading `/`, and put values in it with
+`$( )`:
+
+```text
+get(/settings/app).maintenance == false
+get(/users/$(request.auth.uid)).role == 'admin'
+exists(/projects/$(projectId)/members/$(request.auth.uid))
+```
+
+Each `$( )` is **one segment**: a string or a number (a value containing `/` is an error, so an id can't reach
+another path), or a path value — such as a `{rest=**}` capture — which adds all its segments. Firebase's
+`/databases/$(database)/documents/` prefix is accepted and ignored, so its rules work as they are. Paths can also
+be compared: `resource.team == /teams/$(teamId)`.
+
+`path('users', uid, 'notes')` builds the same path from parts.
 
 A call to a function that doesn't exist (usually a typo) always fails; the editors and `winche rules validate`
 warn about it.
 
 ---
+
+## Writing your own functions
+
+A condition used in several rules can be named once:
+
+```text
+function signedIn() {
+  return request.auth != null;
+}
+
+function isOwner(uid) {
+  return signedIn() && request.auth.uid == uid;
+}
+
+match users/{uid} {
+  function isStaff() {
+    let role = request.auth.token.role;
+    return role in ['admin', 'staff'];
+  }
+
+  allow get: if isOwner(uid) || isStaff();
+  allow update: if isOwner(uid) && changes only ['name'];
+
+  match notes/{noteId} {
+    allow read, write: if isOwner(uid) || isStaff();
+  }
+}
+```
+
+- A function has parameters, any number of `let name = value;` lines, and one `return`.
+- It can use `request`, `resource`, the path captures where it's defined, other functions, and the built-ins.
+- **Where it's visible:** a top-level function works everywhere; one inside a `match` works in that block and
+  the blocks nested in it. Order doesn't matter — call a function before or after it's defined.
+- A call means exactly the same as writing the function's body there, so functions also work in `list` rules:
+  `allow list: if isOwnedBy(request.auth.uid);` with `function isOwnedBy(u) { return resource.ownerId == u; }`
+  is proved like the condition written out.
+- Functions can't call themselves (directly or through others), and can't use a built-in's name. A call with the
+  wrong number of arguments is an error in the file.
 
 ## Common patterns
 
@@ -275,7 +329,8 @@ allow create: if request.auth != null;
 
 **Based on another document**
 ```text
-allow read: if get(path('settings/app')).maintenance == false;
+allow read: if get(/settings/app).maintenance == false;
+allow write: if get(/projects/$(projectId)/members/$(request.auth.uid)).role == 'editor';
 ```
 
 **Until a date**
@@ -410,11 +465,11 @@ Most rules carry over almost unchanged. The differences:
 | `rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { … } }` | just the `match` blocks, at the top level |
 | `match /users/{uid}` | `match users/{uid}` (no leading `/`) |
 | `resource.data.ownerId` | `resource.ownerId` — `resource.data.ownerId` works too, except in list rules |
-| `get(/databases/$(database)/documents/teams/$(id))` | `get(path('teams/t1'))` — fixed paths only for now |
+| `get(/databases/$(database)/documents/teams/$(id))` | the same, or `get(/teams/$(id))` |
 | `request.resource.data.keys().hasOnly([...])` | also `request.resource.data has only [...]` |
 | `request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])` | also `changes only [...]` |
 | `!(x in y)` | also `x not in y` |
-| `function isOwner() { … }` | not yet — repeat the condition, or split it into several `allow` lines |
+| `function isOwner() { … }`, `let` | the same |
 | `request.auth.token.email_verified`, custom claims | the same, from your identity provider's token |
 
 ---
@@ -422,14 +477,16 @@ Most rules carry over almost unchanged. The differences:
 ## Reference
 
 ```text
-file      := match*
-match     := 'match' path '{' (allow | match)* '}'
+file      := (match | function)*
+match     := 'match' path '{' (allow | match | function)* '}'
+function  := 'function' name '(' (name (',' name)*)? ')' '{' ('let' name '=' condition ';')* 'return' condition ';' '}'
 allow     := 'allow' operation (',' operation)* (':' 'if' condition)? ';'
 operation := 'get' | 'list' | 'create' | 'update' | 'delete' | 'read' | 'write'
 path      := segment ('/' segment)*
 segment   := name | '{' name '}' | '{' name '=**}'
 ```
 
-Conditions use the [operators](#operators), [functions](#functions) and [values](#values) above. Keywords:
-`match allow if in is true false null`, plus the pairs `not in`, `has only|all|any` and `changes only|all|any`
+Conditions use the [operators](#operators), [functions](#functions) and [values](#values) above; a path value is
+`'/' part ('/' part)*` where a part is a segment or `$(condition)`. Keywords:
+`match allow if function let return in is true false null`, plus the pairs `not in`, `has only|all|any` and `changes only|all|any`
 (alone, `not`, `has`, `changes`, `only`, `all` and `any` are ordinary names).

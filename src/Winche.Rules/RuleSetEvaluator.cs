@@ -21,7 +21,7 @@ public static class RuleSetEvaluator
         RuleContext context,
         CancellationToken ct = default)
     {
-        foreach (var (pattern, allow) in RuleFlatten.Flatten(ruleset.Matches, []))
+        foreach (var (pattern, allow) in RuleFlatten.Flatten(ruleset))
         {
             if (!allow.Operations.Contains(operation)) continue;
             if (!PathPattern.TryMatch(pattern, documentPath, out var captures)) continue;

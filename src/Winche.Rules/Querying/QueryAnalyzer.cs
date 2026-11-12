@@ -23,7 +23,7 @@ public static class QueryAnalyzer
         ArgumentNullException.ThrowIfNull(query);
         ArgumentNullException.ThrowIfNull(context);
 
-        foreach (var rule in RuleFlatten.Flatten(ruleset.Matches, []))
+        foreach (var rule in RuleFlatten.Flatten(ruleset))
         {
             if (!rule.Allow.Operations.Contains(RuleOperation.List)) continue;
             var governs = query.CollectionGroup

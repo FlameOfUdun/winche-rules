@@ -16,6 +16,7 @@ namespace Winche.Rules.Evaluation;
 ///   <item><term><c>matches(string, regex)</c></term><description>the whole string matches (100 ms limit)</description></item>
 ///   <item><term><c>lower(s)</c> / <c>upper(s)</c></term><description>case conversion (invariant)</description></item>
 ///   <item><term><c>get(map, key, default)</c></term><description>the value at key, or default when absent</description></item>
+///   <item><term><c>path(part, …)</c></term><description>a path from its parts (4.1.0): strings and ints are one segment each, paths add their segments; what <c>/users/$(uid)</c> means</description></item>
 /// </list>
 /// </summary>
 public static class RuleFunctions
@@ -29,7 +30,7 @@ public static class RuleFunctions
     [
         "exists", "get", "size", "keys", "hasOnly", "hasAll", "hasAny", "diff",
         "affectedKeys", "addedKeys", "removedKeys", "changedKeys", "unchangedKeys",
-        "is", "matches", "lower", "upper",
+        "is", "matches", "lower", "upper", "path",
     ];
 
     private static readonly ConcurrentDictionary<string, Regex> Patterns = new(StringComparer.Ordinal);
@@ -59,11 +60,43 @@ public static class RuleFunctions
             "lower" => RuleValue.String(String(name, One(name, args)).ToLowerInvariant()),
             "upper" => RuleValue.String(String(name, One(name, args)).ToUpperInvariant()),
             "get" when args.Count == 3 => Map(name, args[0]).TryGetValue(String(name, args[1]), out var v) ? v : args[2],
+            "path" => JoinPath(args),
             _ => default,
         };
         return name is "size" or "keys" or "hasOnly" or "hasAll" or "hasAny" or "diff" or "affectedKeys" or "addedKeys"
-            or "removedKeys" or "changedKeys" or "unchangedKeys" or "is" or "matches" or "lower" or "upper"
+            or "removedKeys" or "changedKeys" or "unchangedKeys" or "is" or "matches" or "lower" or "upper" or "path"
             || (name == "get" && args.Count == 3);
+    }
+
+    /// <summary>
+    /// A path from its parts. A string or int is one segment, so a value can't add segments of its own
+    /// (an id of <c>"u1/admin"</c> is an error, not two segments); a path value adds all of its segments.
+    /// </summary>
+    private static RuleValue JoinPath(IReadOnlyList<RuleValue> args)
+    {
+        if (args.Count == 0) throw new RuleEvaluationException("path() needs at least one part.");
+        var segments = new List<string>();
+        foreach (var a in args)
+        {
+            switch (a.Kind)
+            {
+                case RuleValueKind.String:
+                    var s = a.AsString;
+                    if (s.Length == 0 || s.Contains('/'))
+                        throw new RuleEvaluationException($"A path segment can't be empty or contain '/': '{s}'.");
+                    segments.Add(s);
+                    break;
+                case RuleValueKind.Int:
+                    segments.Add(a.AsInt.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    break;
+                case RuleValueKind.Path:
+                    segments.AddRange(a.AsPath.Split('/', StringSplitOptions.RemoveEmptyEntries));
+                    break;
+                default:
+                    throw new RuleEvaluationException($"A path segment must be a string, int or path, not a {a.Kind}.");
+            }
+        }
+        return RuleValue.Path(string.Join('/', segments));
     }
 
     private static RuleValue Size(RuleValue arg) => RuleValue.Int(arg.Kind switch

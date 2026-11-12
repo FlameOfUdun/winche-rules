@@ -24,6 +24,33 @@ internal static class RuleFlatten
         }
     }
 
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<RuleSet, IReadOnlyList<FlannetedRule>> Cache = new();
+
+    /// <summary>
+    /// The ruleset's rules with their full patterns and with calls to its functions expanded (cached per ruleset
+    /// instance: rulesets are immutable).
+    /// </summary>
+    public static IReadOnlyList<FlannetedRule> Flatten(RuleSet ruleSet) =>
+        Cache.GetValue(ruleSet, rs => [.. Flatten(rs.Matches ?? [], [], FunctionScope.Empty.With(rs.Functions))]);
+
+    private static IEnumerable<FlannetedRule> Flatten(IReadOnlyList<MatchBlock> blocks, IReadOnlyList<PathSegment> prefix, FunctionScope outer)
+    {
+        foreach (var block in blocks)
+        {
+            IReadOnlyList<PathSegment> full =
+                prefix.Count == 0 ? PathPattern.Parse(block.Path) : [.. prefix, .. PathPattern.Parse(block.Path)];
+            var scope = outer.With(block.Functions);
+
+            foreach (var allow in block.Allow)
+                yield return new FlannetedRule(full, ReferenceEquals(scope, FunctionScope.Empty)
+                    ? allow
+                    : allow with { Condition = FunctionInliner.Inline(allow.Condition, scope) });
+
+            foreach (var nested in Flatten(block.Matches ?? [], full, scope))
+                yield return nested;
+        }
+    }
+
     public static IEnumerable<FlannetedRule> Flatten(IReadOnlyList<MatchBlock> blocks, IReadOnlyList<PathSegment> prefix)
     {
         foreach (var block in blocks)

@@ -98,7 +98,10 @@ public static partial class RuleText
         {
             var (text, prec) = e switch
             {
-                LiteralExpression l => (Literal(l.Value), l.Value.IsNumber && l.Value.AsNumber < 0 ? 5 : 7),
+                // Precedence 5, not 7: '.' is a path character, so `/a/b.c` would read back as one path — a path
+            // literal is bracketed before `.field`, `[i]` and `.method()`: `(/a/b).c`.
+            LiteralExpression { Value.Kind: RuleValueKind.Path } l when readable && IsPlainPath(l.Value.AsPath) => ("/" + l.Value.AsPath, 5),
+            LiteralExpression l => (Literal(l.Value), l.Value.IsNumber && l.Value.AsNumber < 0 ? 5 : 7),
                 VarExpression v => (Name(v.Name), 7),
                 MemberExpression m => ($"{Write(m.Target, 6)}.{Name(m.Name)}", 6),
                 IndexExpression ix => ($"{Write(ix.Target, 6)}[{Write(ix.Index, 0)}]", 6),
@@ -122,6 +125,9 @@ public static partial class RuleText
         private (string, int) Call(CallExpression call)
         {
             var args = call.Args;
+            if (readable && call.Name == "path" && args.Count > 0
+                && args.All(a => a is not LiteralExpression || (a is LiteralExpression { Value.Kind: RuleValueKind.String } sl && IsPlainPath(sl.Value.AsString) && !sl.Value.AsString.Contains('/'))))
+                return (string.Concat(args.Select(a => a is LiteralExpression sl ? "/" + sl.Value.AsString : $"/$({Write(a, 0)})")), 5);
             if (readable && args.Count == 2 && SetWord(call.Name) is { } word)
             {
                 if (args[0].Equals(ChangedKeysShape))
@@ -144,6 +150,10 @@ public static partial class RuleText
         ComparisonOperator.Le => "<=", ComparisonOperator.Gt => ">", ComparisonOperator.Ge => ">=",
         _ => throw new ArgumentOutOfRangeException(nameof(op)),
     };
+
+    /// <summary>A path that can be written as a literal <c>/a/b</c>: non-empty segments of path characters.</summary>
+    private static bool IsPlainPath(string path) =>
+        path.Length > 0 && path.Split('/').All(seg => seg.Length > 0 && seg.All(IsPathChar));
 
     private static bool IsIdentifier(string s) =>
         s.Length > 0 && (char.IsAsciiLetter(s[0]) || s[0] == '_') && s.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')
@@ -197,7 +207,10 @@ public static partial class RuleText
 
     // ── parsing ────────────────────────────────────────────────────────────
 
-    private enum T { Ident, Number, String, Op, End }
+    private enum T { Ident, Number, String, Op, Path, End }
+
+    /// <summary>Characters of a literal path segment (<c>/users/u-1.a</c>).</summary>
+    private static bool IsPathChar(char c) => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.' or '~' or '@' or '%' or '+';
 
     private readonly record struct Token(T Kind, string Text, int Offset, bool Quoted = false)
     {
@@ -404,6 +417,9 @@ public static partial class RuleText
                     if (!IsOp("(")) return new VarExpression(t.Text);
                     var args = Args();
                     return (t.Quoted ? null : (RuleExpression?)LiteralCall(t, args)) ?? new CallExpression(t.Text, args);
+                case T.Path:
+                    Next();
+                    return PathLiteral(t);
                 case T.Op when t.Text == "(":
                     Next();
                     var inner = Ternary();
@@ -441,6 +457,66 @@ public static partial class RuleText
             }
         }
 
+        /// <summary>
+        /// <c>/users/$(request.auth.uid)/notes/n1</c>: a constant path, or <c>path('users', request.auth.uid, 'notes', 'n1')</c>.
+        /// Firebase's <c>/databases/$(database)/documents/…</c> prefix is dropped, so its rules read as they are.
+        /// </summary>
+        private RuleExpression PathLiteral(Token t)
+        {
+            var parts = new List<RuleExpression>();
+            var raw = t.Text;
+            var i = 0;
+            while (i < raw.Length)
+            {
+                i++;   // the '/'
+                var start = i;
+                if (i + 1 < raw.Length && raw[i] == '$' && raw[i + 1] == '(')
+                {
+                    var depth = 0;
+                    var j = i + 1;
+                    for (; j < raw.Length; j++)
+                    {
+                        if (raw[j] is '\'' or '"')
+                        {
+                            var q = raw[j++];
+                            while (j < raw.Length && raw[j] != q) j += raw[j] == '\\' ? 2 : 1;
+                            continue;
+                        }
+                        if (raw[j] == '(') depth++;
+                        else if (raw[j] == ')' && --depth == 0) break;
+                    }
+                    var innerStart = i + 2;
+                    var inner = raw[innerStart..j];
+                    RuleExpression e;
+                    try
+                    {
+                        e = new Parser(inner).ParseAll();
+                    }
+                    catch (RuleSyntaxException ex)
+                    {
+                        throw Error(ex.Reason == "A condition is empty" ? "$( ) needs an expression" : ex.Reason, t.Offset + innerStart + ex.Offset);
+                    }
+                    parts.Add(e);
+                    i = j + 1;
+                }
+                else
+                {
+                    while (i < raw.Length && raw[i] != '/') i++;
+                    parts.Add(new LiteralExpression(RuleValue.String(raw[start..i])));
+                }
+            }
+
+            if (parts.Count >= 3 && parts[0] is LiteralExpression { Value.Kind: RuleValueKind.String } p0 && p0.Value.AsString == "databases"
+                && parts[1] is VarExpression { Name: "database" }
+                && parts[2] is LiteralExpression { Value.Kind: RuleValueKind.String } p2 && p2.Value.AsString == "documents")
+                parts.RemoveRange(0, 3);
+            if (parts.Count == 0) throw Error("A path needs at least one segment after /databases/$(database)/documents", t);
+
+            return parts.All(x => x is LiteralExpression)
+                ? new LiteralExpression(RuleValue.Path(string.Join('/', parts.Select(x => ((LiteralExpression)x).Value.AsString))))
+                : new CallExpression("path", parts);
+        }
+
         // A list or map element: only constants (the expression model has no list or map construction).
         private RuleValue Constant()
         {
@@ -453,6 +529,8 @@ public static partial class RuleText
         private LiteralExpression? LiteralCall(Token name, List<RuleExpression> args)
         {
             if (name.Text is not ("timestamp" or "path" or "bytes" or "float")) return null;
+            // path(a, b, …) with anything but one constant string joins its parts at evaluation.
+            if (name.Text == "path" && args is not [LiteralExpression { Value.Kind: RuleValueKind.String }]) return null;
             if (args is not [LiteralExpression { Value.Kind: RuleValueKind.String } arg])
                 throw Error($"{name.Text}() takes one string", name);
             var s = arg.Value.AsString;
@@ -577,6 +655,11 @@ public static partial class RuleText
                     }
                     tokens.Add(new Token(T.String, sb.ToString(), start));
                 }
+                else if (c == '/' && !PrecededByValue(tokens))
+                {
+                    i = LexPath(text, i);
+                    tokens.Add(new Token(T.Path, text[start..i], start));
+                }
                 else
                 {
                     var op = Operators.FirstOrDefault(o => string.CompareOrdinal(text, i, o, 0, o.Length) == 0);
@@ -590,9 +673,47 @@ public static partial class RuleText
             return tokens;
         }
 
+        /// <summary>Scans a path literal from its first '/': segments of path characters or <c>$( … )</c>; returns its end.</summary>
+        private static int LexPath(string text, int i)
+        {
+            while (i < text.Length && text[i] == '/' && !(i + 1 < text.Length && text[i + 1] == '/'))
+            {
+                var segmentStart = ++i;
+                if (i + 1 < text.Length && text[i] == '$' && text[i + 1] == '(')
+                {
+                    var depth = 0;
+                    i++;
+                    while (true)
+                    {
+                        if (i >= text.Length || text[i] == '\n') throw RuleText.Error(text, "A $( … ) in a path isn't closed", segmentStart);
+                        var ch = text[i];
+                        if (ch is '\'' or '"')
+                        {
+                            i++;
+                            while (i < text.Length && text[i] != ch && text[i] != '\n') i += text[i] == '\\' ? 2 : 1;
+                            i++;
+                            continue;
+                        }
+                        if (ch == '(') depth++;
+                        else if (ch == ')' && --depth == 0) { i++; break; }
+                        i++;
+                    }
+                }
+                else
+                {
+                    while (i < text.Length && IsPathChar(text[i])) i++;
+                }
+                if (i == segmentStart) throw RuleText.Error(text, "A path segment is empty", segmentStart);
+            }
+            return i;
+        }
+
         // ".5" starts a number unless it follows something a member access could apply to (x.5 is an error later).
+        // (The words before an operand — `in`, and `only`/`all`/`any` after `has`/`changes` — aren't values, so
+        // `x in /a/b` is a path literal.)
         private static bool PrecededByValue(List<Token> tokens) =>
-            tokens.Count > 0 && tokens[^1] is { Kind: T.Ident or T.Number or T.String } or { Kind: T.Op, Text: ")" or "]" };
+            tokens.Count > 0 && tokens[^1] is { Kind: T.Ident or T.Number or T.String or T.Path } or { Kind: T.Op, Text: ")" or "]" }
+            && tokens[^1] is not { Kind: T.Ident, Quoted: false, Text: "in" or "only" or "all" or "any" };
     }
 
     private static RuleSyntaxException Error(string text, string message, int offset)
