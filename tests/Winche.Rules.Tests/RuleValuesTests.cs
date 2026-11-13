@@ -76,6 +76,9 @@ public class RuleValuesTests
         Assert.Equal("""{"$integer":"5"}""", JsonSerializer.Serialize<Value>(new IntegerValue(5), Literal));
         Assert.IsType<DoubleValue>(JsonSerializer.Deserialize<Value>("""{"$double":5}""", Literal));
         Assert.IsType<MapValue>(JsonSerializer.Deserialize<Value>("""{"a":true}""", Literal));
+        var map = new MapValue(new Dictionary<string, Value> { ["n"] = new IntegerValue(1) });
+        Assert.Equal("""{"n":{"$integer":"1"}}""", JsonSerializer.Serialize(map, Literal));   // a record, not only Value
+        Assert.Equal(map, JsonSerializer.Deserialize<MapValue>(JsonSerializer.Serialize(map, Literal), Literal));
         var json = RuleJson.Serialize(new LiteralExpression(new IntegerValue(5)));
         Assert.Contains("\"$integer\":\"5\"", json);
         Assert.Equal(new LiteralExpression(new IntegerValue(5)), RuleJson.DeserializeExpr(json));

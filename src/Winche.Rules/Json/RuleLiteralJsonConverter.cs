@@ -17,6 +17,9 @@ public sealed class RuleLiteralJsonConverter : JsonConverter<Value>
     /// <inheritdoc/>
     public override bool HandleNull => true;
 
+    /// <summary>Any value record (<see cref="MapValue"/>, <see cref="StringValue"/>, …), not only <see cref="Value"/>.</summary>
+    public override bool CanConvert(Type typeToConvert) => typeof(Value).IsAssignableFrom(typeToConvert);
+
     /// <inheritdoc/>
     public override Value Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => reader.TokenType switch
     {
