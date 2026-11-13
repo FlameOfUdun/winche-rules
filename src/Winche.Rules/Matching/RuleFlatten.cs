@@ -15,10 +15,10 @@ internal static class RuleFlatten
     {
         foreach (var block in blocks)
         {
-            var own = PathPattern.Parse(block.Path);
+            var own = RulePath.Parse(block.Path);
             IReadOnlyList<PathSegment> full = prefix is null ? own : [.. prefix, .. own];
             var fullText = prefixText is null ? block.Path : $"{prefixText}/{block.Path}";
-            if (PathPattern.RecursiveCount(full) > 1)
+            if (RulePath.RecursiveCount(full) > 1)
                 throw new ArgumentException($"match '{fullText}' has more than one recursive wildcard (including its parents'); it could never match.");
             Validate(block.Matches, full, fullText);
         }
@@ -38,7 +38,7 @@ internal static class RuleFlatten
         foreach (var block in blocks)
         {
             IReadOnlyList<PathSegment> full =
-                prefix.Count == 0 ? PathPattern.Parse(block.Path) : [.. prefix, .. PathPattern.Parse(block.Path)];
+                prefix.Count == 0 ? RulePath.Parse(block.Path) : [.. prefix, .. RulePath.Parse(block.Path)];
             var scope = outer.With(block.Functions);
 
             foreach (var allow in block.Allow)
@@ -56,7 +56,7 @@ internal static class RuleFlatten
         foreach (var block in blocks)
         {
             IReadOnlyList<PathSegment> full =
-                prefix.Count == 0 ? PathPattern.Parse(block.Path) : [.. prefix, .. PathPattern.Parse(block.Path)];
+                prefix.Count == 0 ? RulePath.Parse(block.Path) : [.. prefix, .. RulePath.Parse(block.Path)];
 
             foreach (var allow in block.Allow)
                 yield return new FlannetedRule(full, allow);

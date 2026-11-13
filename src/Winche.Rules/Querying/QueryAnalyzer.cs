@@ -50,8 +50,8 @@ public static class QueryAnalyzer
 
         return leaf switch
         {
-            ParamSegment => PathPattern.TryMatch(prefix, collection, out parentParams),
-            RecursiveSegment => PathPattern.TryMatchPrefix(prefix, collection, out parentParams),
+            ParamSegment => RulePath.TryMatch(prefix, collection, out parentParams),
+            RecursiveSegment => RulePath.TryMatchPrefix(prefix, collection, out parentParams),
             _ => false,
         };
     }

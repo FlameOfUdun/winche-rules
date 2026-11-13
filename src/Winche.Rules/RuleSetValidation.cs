@@ -94,7 +94,7 @@ public static class RuleSetValidation
             IReadOnlyList<PathSegment> own;
             try
             {
-                own = PathPattern.Parse(block.Path ?? "");
+                own = RulePath.Parse(block.Path ?? "");
             }
             catch (ArgumentException ex)
             {
@@ -108,7 +108,7 @@ public static class RuleSetValidation
                 issues.Add(new(label,
                     $"match '{block.Path}' ends in a recursive wildcard and cannot contain nested matches; " +
                     "nested rules would be unreachable."));
-            if (PathPattern.RecursiveCount(full) > 1)
+            if (RulePath.RecursiveCount(full) > 1)
                 issues.Add(new(label,
                     $"match '{label}' has more than one recursive wildcard (including its parents'); it could never match."));
 

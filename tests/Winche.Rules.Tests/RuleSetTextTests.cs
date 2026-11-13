@@ -107,7 +107,7 @@ public class RuleSetTextTests
     [InlineData("match users/{uid} {\n  allow read: if request.auth = null;\n}", "Use '==' to compare", 2, 31)]
     [InlineData("match users/{uid} {\n  allow read: if a\n}", "Missing ';' after the condition", 3, 1)]
     [InlineData("match users/{uid} {\n  allow read: if true;\n", "Missing '}' to close 'match users/{uid}'", 3, 1)]
-    [InlineData("match users/{u-id} {}", "Invalid capture name in '{u-id}'", 1, 7)]
+    [InlineData("match users/{u-id} {}", "'{u-id}' isn't a valid capture", 1, 7)]
     [InlineData("match a/{p=**} {\n  match b/{c} {}\n}", "'match a/{p=**}' ends in a recursive wildcard", 1, 7)]
     [InlineData("match users/{uid} {\n  allow read: if '; still a string';", "Missing '}' to close", 2, 37)]
     public void Errors_say_what_and_where(string text, string reason, int line, int column)

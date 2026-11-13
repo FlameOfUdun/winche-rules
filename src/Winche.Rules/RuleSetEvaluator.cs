@@ -24,7 +24,7 @@ public static class RuleSetEvaluator
         foreach (var (pattern, allow) in RuleFlatten.Flatten(ruleset))
         {
             if (!allow.Operations.Contains(operation)) continue;
-            if (!PathPattern.TryMatch(pattern, documentPath, out var captures)) continue;
+            if (!RulePath.TryMatch(pattern, documentPath, out var captures)) continue;
 
             foreach (var (k, v) in context.Params) captures.TryAdd(k, v);   // path captures take precedence
             var scoped = new RuleContext

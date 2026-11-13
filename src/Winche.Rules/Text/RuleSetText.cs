@@ -241,7 +241,7 @@ public static partial class RuleText
             if (path.Length == 0) throw Fail("Expected a path after 'match'", at);
             try
             {
-                PathPattern.Parse(path);
+                RulePath.Parse(path);
             }
             catch (ArgumentException ex)
             {
@@ -251,7 +251,7 @@ public static partial class RuleText
             SkipTrivia();
             Expect('{', "after the match path");
             var outer = _prefix;
-            _prefix = [.. outer, .. PathPattern.Parse(path)];
+            _prefix = [.. outer, .. RulePath.Parse(path)];
 
             var allow = new List<AllowRule>();
             var nested = new List<MatchBlock>();
@@ -274,9 +274,9 @@ public static partial class RuleText
                 else throw Fail(word.Length == 0 ? $"Unexpected '{text[wordAt]}'" : $"Expected 'allow', 'match', 'function' or '}}' but found '{word}'", wordAt);
             }
 
-            if (PathPattern.RecursiveCount([.. _prefix, .. PathPattern.Parse(path)]) > 1)
+            if (RulePath.RecursiveCount([.. _prefix, .. RulePath.Parse(path)]) > 1)
                 throw Fail($"'match {path}' has a second recursive wildcard (a path, including its parents', may have one)", at);
-            if (nested.Count > 0 && PathPattern.Parse(path)[^1] is RecursiveSegment)
+            if (nested.Count > 0 && RulePath.Parse(path)[^1] is RecursiveSegment)
                 throw Fail($"'match {path}' ends in a recursive wildcard, so nothing nested in it can match", at);
             return new MatchBlock(path, allow, nested) { Functions = functions.Count > 0 ? functions : null };
         }

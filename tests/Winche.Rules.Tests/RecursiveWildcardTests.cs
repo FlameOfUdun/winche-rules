@@ -24,7 +24,7 @@ public class RecursiveWildcardTests
     [InlineData("users/{rest=**}", "users", false, null)]
     public void Matches_with_a_recursive_wildcard_anywhere(string pattern, string path, bool matches, string? captured)
     {
-        var ok = PathPattern.TryMatch(PathPattern.Parse(pattern), path, out var captures);
+        var ok = RulePath.TryMatch(RulePath.Parse(pattern), path, out var captures);
         Assert.Equal(matches, ok);
         if (!matches) return;
         var name = pattern.Contains("{path=**}") ? "path" : "rest";
