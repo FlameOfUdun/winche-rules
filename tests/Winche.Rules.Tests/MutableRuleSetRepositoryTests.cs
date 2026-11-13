@@ -1,3 +1,4 @@
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.Expressions;
 using Xunit;
@@ -7,7 +8,7 @@ namespace Winche.Rules.Tests;
 public class MutableRuleSetRepositoryTests
 {
     private static RuleSet Set(string path) => RuleSetBuilder.Build(r =>
-        r.Match(path, m => m.Allow(RuleOperations.Read, new LiteralExpression(RuleValue.Bool(true)))));
+        r.Match(path, m => m.Allow(RuleOperations.Read, new LiteralExpression(RuleValues.True))));
 
     [Fact]
     public void Current_ReturnsInitialRuleSet()

@@ -1,3 +1,4 @@
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
@@ -9,18 +10,18 @@ namespace Winche.Rules.Tests;
 /// <summary>3.1.0 built-in functions, written in the text syntax (which also exercises the parser).</summary>
 public class RuleFunctionTests
 {
-    private static RuleValue S(string s) => RuleValue.String(s);
-    private static RuleValue M(params (string K, RuleValue V)[] e) => RuleValue.Map(e.ToDictionary(x => x.K, x => x.V));
+    private static StringValue S(string s) => new StringValue(s);
+    private static MapValue M(params (string K, Value V)[] e) => new MapValue(e.ToDictionary(x => x.K, x => x.V));
 
     // before: {name: 'a', role: 'user', age: 3}; after: {name: 'b', role: 'user', email: 'x'}
-    private static readonly RuleValue Before = M(("name", S("a")), ("role", S("user")), ("age", RuleValue.Int(3)));
-    private static readonly RuleValue After = M(("name", S("b")), ("role", S("user")), ("email", S("x")));
+    private static readonly Value Before = M(("name", S("a")), ("role", S("user")), ("age", new IntegerValue(3)));
+    private static readonly Value After = M(("name", S("b")), ("role", S("user")), ("email", S("x")));
 
     private static RuleContext Ctx() => new()
     {
         Resource = Before,
-        Request = M(("resource", After), ("auth", M(("token", M(("roles", RuleValue.List([S("editor"), S("viewer")]))))))),
-        Params = new Dictionary<string, RuleValue> { ["userId"] = S("u1") },
+        Request = M(("resource", After), ("auth", M(("token", M(("roles", new ArrayValue([S("editor"), S("viewer")]))))))),
+        Params = new Dictionary<string, Value> { ["userId"] = S("u1") },
     };
 
     private static Task<bool> Eval(string text) => RuleEvaluator.EvaluateAsync(RuleText.Parse(text), Ctx());

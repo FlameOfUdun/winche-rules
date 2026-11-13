@@ -158,6 +158,7 @@ Every `{name}` in the enclosing matches is a variable: in `match users/{uid}/not
 | timestamps | `timestamp('2027-01-01T00:00:00Z')` |
 | paths | `/teams/t1`, `/users/$(request.auth.uid)` — see [Building paths](#building-paths) (or `path('teams/t1')`) |
 | bytes | `bytes('AAEC')` (base64) |
+| geo points | no literal; a stored location is a `latlng` — read `.latitude` and `.longitude` (a map that merely has those keys is not a `latlng`) |
 
 A field whose name isn't a plain identifier goes in backticks: ``resource.`first name` ``.
 
@@ -177,7 +178,7 @@ Loosest first:
 | `==` `!=` `<` `<=` `>` `>=` | comparisons |
 | `x in list`, `key in map` | membership |
 | `x not in list` | not a member — same as `!(x in list)` |
-| `x is string` | type check: `string int float number bool null map list timestamp bytes path` |
+| `x is string` | type check: `string int float number bool null map list timestamp bytes path latlng` |
 | `map has only [...]` | the map has no keys but these |
 | `map has all [...]` / `has any [...]` | the map has every / at least one of these keys |
 | `changes only [...]` | an update changes no fields but these |

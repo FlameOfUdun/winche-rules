@@ -1,3 +1,4 @@
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
@@ -63,14 +64,14 @@ public class ReadableFormsTests
               allow update: if changes only ['name'] && 'admin' not in request.resource.data;
             }
             """);
-        var engine = new RuleEngine(new StaticRuleSetRepository(rules), new DefaultRuleValueComparer());
-        RuleValue Doc(string json) => System.Text.Json.JsonSerializer.Deserialize<RuleValue>(json.Replace('\'', '"'), Json.RuleJson.Options);
-        RuleValue WithData(RuleValue fields) => RuleValue.Map(new Dictionary<string, RuleValue>(fields.AsMap) { ["data"] = fields });
+        var engine = new RuleEngine(new StaticRuleSetRepository(rules));
+        Value Doc(string json) => System.Text.Json.JsonSerializer.Deserialize<Value>(json.Replace('\'', '"'), Json.RuleJson.Options)!;
+        Value WithData(Value fields) => new MapValue(new Dictionary<string, Value>(((MapValue)fields).Fields) { ["data"] = fields });
 
         var request = new RuleRequest
         {
             Resource = WithData(Doc("{'name': 'A', 'owner': 'u1'}")),
-            Request = RuleValue.Map(new Dictionary<string, RuleValue> { ["resource"] = WithData(Doc(after)) }),
+            Request = new MapValue(new Dictionary<string, Value> { ["resource"] = WithData(Doc(after)) }),
         };
         Assert.Equal(allowed, await engine.AllowsAsync(RuleOperation.Update, "docs/d1", request));
     }

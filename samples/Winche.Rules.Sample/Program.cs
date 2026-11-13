@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.DependencyInjection;
 using Winche.Rules.Evaluation;
@@ -50,7 +51,7 @@ var services = new ServiceCollection();
 // One isolated, hot-swappable engine per resource type. Each has its own ruleset,
 // its own comparer, and its own IMutableRuleSetRepository — keys are never merged.
 services.AddWincheRules("documents", o => o.WithMutableRuleSetRepository(DocumentsRules(allowPublicReads: false)));
-services.AddWincheRules("orders", o => o.WithMutableRuleSetRepository(OrdersRules()).WithRuleValueComparer(new CaseInsensitiveComparer()));
+services.AddWincheRules("orders", o => o.WithMutableRuleSetRepository(OrdersRules()));
 
 using var sp = services.BuildServiceProvider();
 
@@ -105,15 +106,15 @@ Section("3. Query authorization (static analysis, never runs the query)");
 
 var listReq = new RuleRequest
 {
-    Request = RuleValue.Map(new Dictionary<string, RuleValue>
+    Request = new MapValue(new Dictionary<string, Value>
     {
-        ["method"] = RuleValue.String("list"),
-        ["auth"] = RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String("alice") }),
+        ["method"] = new StringValue("list"),
+        ["auth"] = new MapValue(new Dictionary<string, Value> { ["uid"] = new StringValue("alice") }),
     }),
 };
 
 var ownerQuery = new QueryConstraints("documents",
-    [new QueryConstraint(["ownerId"], ComparisonOperator.Eq, RuleValue.String("alice"))]);
+    [new QueryConstraint(["ownerId"], ComparisonOperator.Eq, new StringValue("alice"))]);
 var openQuery = new QueryConstraints("documents", []);
 
 Show("list documents WHERE ownerId == alice (provably safe)", documents.Allows(ownerQuery, listReq));
@@ -143,17 +144,6 @@ Console.WriteLine("   " + json);
 var restored = RuleJson.DeserializeRuleSet(json);
 Show("deserialized ruleset equals the original", restored.Equals(OrdersRules()));
 
-// ----- 6. Per-type comparer --------------------------------------------------
-
-Section("6. Per-type comparer (orders uses a case-insensitive comparer)");
-
-Show("orders: status \"shipped\" matches rule \"SHIPPED\" (case-insensitive comparer)",
-    await orders.AllowsAsync(RuleOperation.Get, "orders/o1",
-        new RuleRequest { Resource = OrderStatus("shipped") }));
-Show("orders: status \"pending\" does not match",
-    await orders.AllowsAsync(RuleOperation.Get, "orders/o1",
-        new RuleRequest { Resource = OrderStatus("pending") }));
-
 Console.WriteLine();
 Console.WriteLine(new string('=', 60));
 Console.WriteLine("Done. Rules changed at runtime with no recompile and no restart.");
@@ -172,61 +162,40 @@ static void Show(string label, bool allowed) =>
     Console.WriteLine($"   [{(allowed ? "ALLOW" : "DENY ")}] {label}");
 
 // A document resource map.
-static RuleValue Doc(string ownerId, bool isPublic) => RuleValue.Map(new Dictionary<string, RuleValue>
+static Value Doc(string ownerId, bool isPublic) => new MapValue(new Dictionary<string, Value>
 {
-    ["ownerId"] = RuleValue.String(ownerId),
-    ["public"] = RuleValue.Bool(isPublic),
+    ["ownerId"] = new StringValue(ownerId),
+    ["public"] = RuleValues.Bool(isPublic),
 });
 
-static RuleValue OrderStatus(string status) => RuleValue.Map(new Dictionary<string, RuleValue>
+static Value OrderStatus(string status) => new MapValue(new Dictionary<string, Value>
 {
-    ["status"] = RuleValue.String(status),
+    ["status"] = new StringValue(status),
 });
 
 // A get/read request carrying the existing resource and the caller's uid.
-static RuleRequest Get(string uid, RuleValue resource) => new()
+static RuleRequest Get(string uid, Value resource) => new()
 {
     Resource = resource,
-    Request = RuleValue.Map(new Dictionary<string, RuleValue>
+    Request = new MapValue(new Dictionary<string, Value>
     {
-        ["method"] = RuleValue.String("get"),
-        ["auth"] = RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String(uid) }),
+        ["method"] = new StringValue("get"),
+        ["auth"] = new MapValue(new Dictionary<string, Value> { ["uid"] = new StringValue(uid) }),
     }),
 };
 
 // A create request carrying the incoming (post-write) resource as request.resource.
-static RuleRequest Create(string uid, RuleValue incoming) => new()
+static RuleRequest Create(string uid, Value incoming) => new()
 {
-    Request = RuleValue.Map(new Dictionary<string, RuleValue>
+    Request = new MapValue(new Dictionary<string, Value>
     {
-        ["method"] = RuleValue.String("create"),
-        ["auth"] = RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String(uid) }),
+        ["method"] = new StringValue("create"),
+        ["auth"] = new MapValue(new Dictionary<string, Value> { ["uid"] = new StringValue(uid) }),
         ["resource"] = incoming,
     }),
 };
 
 // ----- supporting types ------------------------------------------------------
-
-/// A comparer that treats strings case-insensitively and otherwise defers to the default semantics.
-internal sealed class CaseInsensitiveComparer : IRuleValueComparer
-{
-    public bool AreEqual(RuleValue a, RuleValue b)
-    {
-        if (a.Kind == RuleValueKind.String && b.Kind == RuleValueKind.String)
-            return string.Equals(a.AsString, b.AsString, StringComparison.OrdinalIgnoreCase);
-        return a.Equals(b);
-    }
-
-    public bool TryCompare(RuleValue a, RuleValue b, out int result)
-    {
-        if (a.Kind == RuleValueKind.String && b.Kind == RuleValueKind.String)
-        {
-            result = string.Compare(a.AsString, b.AsString, StringComparison.OrdinalIgnoreCase);
-            return true;
-        }
-        return a.TryCompareTo(b, out result);
-    }
-}
 
 /// A demo store for get()/exists(): knows a single team resource whose active flag is configurable.
 internal sealed class DemoResourceProvider(bool teamActive) : IRuleResourceProvider
@@ -234,8 +203,8 @@ internal sealed class DemoResourceProvider(bool teamActive) : IRuleResourceProvi
     public Task<bool> ExistsAsync(string path, CancellationToken ct = default)
         => Task.FromResult(path == "teams/t1");
 
-    public Task<RuleValue> GetAsync(string path, CancellationToken ct = default)
+    public Task<Value> GetAsync(string path, CancellationToken ct = default)
         => Task.FromResult(path == "teams/t1"
-            ? RuleValue.Map(new Dictionary<string, RuleValue> { ["active"] = RuleValue.Bool(teamActive) })
-            : RuleValue.Null);
+            ? (Value)new MapValue(new Dictionary<string, Value> { ["active"] = RuleValues.Bool(teamActive) })
+            : RuleValues.Null);
 }

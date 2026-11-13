@@ -33,7 +33,6 @@ public static class RuleSetEvaluator
                 Request = context.Request,
                 Params = captures,
                 Provider = context.Provider,
-                Comparer = context.Comparer,
             };
 
             if (await RuleEvaluator.EvaluateAsync(allow.Condition, scoped, ct).ConfigureAwait(false))

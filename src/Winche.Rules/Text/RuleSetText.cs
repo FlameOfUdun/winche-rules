@@ -318,7 +318,7 @@ public static partial class RuleText
             if (_pos < text.Length && text[_pos] == ';')
             {
                 _pos++;
-                return new AllowRule(ops, new LiteralExpression(RuleValue.Bool(true)));
+                return new AllowRule(ops, new LiteralExpression(RuleValues.True));
             }
             Expect(':', "after the operations (or ';' to allow unconditionally)");
             SkipTrivia();

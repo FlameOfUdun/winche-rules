@@ -4,18 +4,13 @@ using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
 using Xunit;
 
+using Winche.Values;
 namespace Winche.Rules.Tests;
 
 public class ServiceCollectionExtensionsTests
 {
-    private sealed class AlwaysEqual : IRuleValueComparer
-    {
-        public bool AreEqual(RuleValue a, RuleValue b) => true;
-        public bool TryCompare(RuleValue a, RuleValue b, out int r) { r = 0; return true; }
-    }
-
     private static RuleSet AllowRead(string path) => RuleSetBuilder.Build(r =>
-        r.Match(path, m => m.Allow(RuleOperations.Read, new LiteralExpression(RuleValue.Bool(true)))));
+        r.Match(path, m => m.Allow(RuleOperations.Read, new LiteralExpression(RuleValues.True))));
 
     [Fact]
     public void AddWincheRules_RegistersResolvableEngine()
@@ -75,27 +70,6 @@ public class ServiceCollectionExtensionsTests
 
         var orders = sp.GetRequiredKeyedService<RuleEngine>("orders");
         Assert.True(await orders.AllowsAsync(RuleOperation.Get, "orders/1", new RuleRequest()));   // untouched by docs update
-    }
-
-    [Fact]
-    public async Task AddWincheRules_Keyed_UsesPerKeyComparer()
-    {
-        var rule = RuleSetBuilder.Build(r => r.Match("docs/{id}", m => m.Allow(RuleOperations.Read,
-            new CompareExpression(new MemberExpression(new VarExpression("resource"), "x"),
-                ComparisonOperator.Eq, new LiteralExpression(RuleValue.String("Y"))))));
-
-        var services = new ServiceCollection();
-        services.AddWincheRules("loose", o => o.WithMutableRuleSetRepository(rule).WithRuleValueComparer(new AlwaysEqual()));
-        services.AddWincheRules("strict", o => o.WithMutableRuleSetRepository(rule));   // default comparer
-
-        using var sp = services.BuildServiceProvider();
-        var req = new RuleRequest
-        {
-            Resource = RuleValue.Map(new Dictionary<string, RuleValue> { ["x"] = RuleValue.String("Z") }),
-        };
-
-        Assert.True(await sp.GetRequiredKeyedService<RuleEngine>("loose").AllowsAsync(RuleOperation.Get, "docs/1", req));
-        Assert.False(await sp.GetRequiredKeyedService<RuleEngine>("strict").AllowsAsync(RuleOperation.Get, "docs/1", req));
     }
 
     [Fact]

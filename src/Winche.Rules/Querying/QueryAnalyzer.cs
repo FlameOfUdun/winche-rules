@@ -31,14 +31,14 @@ public static class QueryAnalyzer
                 : Governs(rule.Pattern, query.Collection, out parentParams);
             if (!governs) continue;
 
-            var ctx = new RuleContext { Request = context.Request, Params = parentParams, Provider = context.Provider, Comparer = context.Comparer };
+            var ctx = new RuleContext { Request = context.Request, Params = parentParams, Provider = context.Provider };
             if (Prove(rule.Allow.Condition, query, ctx) == Proof.True)
                 return true;
         }
         return false;   // not provably safe → reject
     }
 
-    private static bool Governs(IReadOnlyList<PathSegment> pattern, string collection, out Dictionary<string, RuleValue> parentParams)
+    private static bool Governs(IReadOnlyList<PathSegment> pattern, string collection, out Dictionary<string, Value> parentParams)
     {
         parentParams = [];
 
@@ -59,7 +59,7 @@ public static class QueryAnalyzer
     // A collection group query reads `id` under any parent, so a rule governs it only if it covers every
     // parent: {p=**}/id/{doc} (the parents' capture stays unbound — per result), {p=**}/{coll}/{doc} (coll
     // binds to id), or a bare {p=**} (everything).
-    private static bool GovernsGroup(IReadOnlyList<PathSegment> pattern, string collectionId, out Dictionary<string, RuleValue> parentParams)
+    private static bool GovernsGroup(IReadOnlyList<PathSegment> pattern, string collectionId, out Dictionary<string, Value> parentParams)
     {
         parentParams = [];
         switch (pattern)
@@ -69,7 +69,7 @@ public static class QueryAnalyzer
             case [RecursiveSegment, LiteralSegment lit, ParamSegment] when lit.Value == collectionId:
                 return true;
             case [RecursiveSegment, ParamSegment coll, ParamSegment]:
-                parentParams[coll.Name] = RuleValue.String(collectionId);
+                parentParams[coll.Name] = new StringValue(collectionId);
                 return true;
             default:
                 return false;
@@ -80,8 +80,8 @@ public static class QueryAnalyzer
     {
         switch (expr)
         {
-            case LiteralExpression { Value.Kind: RuleValueKind.Bool } l:
-                return l.Value.AsBool ? Proof.True : Proof.False;
+            case LiteralExpression { Value: BooleanValue b }:
+                return b.Value ? Proof.True : Proof.False;
 
             case NotExpression n:
                 return Negate(Prove(n.Operand, query, ctx));
@@ -146,18 +146,18 @@ public static class QueryAnalyzer
 
         if (left.Kind == OperandKind.Const && right.Kind == OperandKind.Const)
         {
-            var b = TryCompute(ctx.Comparer, left.Value, c.Op, right.Value);
+            var b = TryCompute(left.Value, c.Op, right.Value);
             return b is null ? Proof.Unknown : b.Value ? Proof.True : Proof.False;
         }
         if (left.Kind == OperandKind.Field && right.Kind == OperandKind.Const)
-            return ProveAtom(ctx.Comparer, left.Field!, c.Op, right.Value, query);
+            return ProveAtom(left.Field!, c.Op, right.Value, query);
         if (left.Kind == OperandKind.Const && right.Kind == OperandKind.Field)
-            return ProveAtom(ctx.Comparer, right.Field!, Flip(c.Op), left.Value, query);
+            return ProveAtom(right.Field!, Flip(c.Op), left.Value, query);
 
         return Proof.Unknown;
     }
 
-    private static Proof ProveAtom(IRuleValueComparer cmp, IReadOnlyList<string> field, ComparisonOperator op, RuleValue value, QueryConstraints query)
+    private static Proof ProveAtom(IReadOnlyList<string> field, ComparisonOperator op, Value value, QueryConstraints query)
     {
         foreach (var c in query.Constraints)
         {
@@ -165,11 +165,11 @@ public static class QueryAnalyzer
 
             if (c.Operator == ComparisonOperator.Eq)
             {
-                var b = TryCompute(cmp, c.Value, op, value);
+                var b = TryCompute(c.Value, op, value);
                 if (b == true) return Proof.True;
                 if (b == false) return Proof.False;
             }
-            else if (c.Operator == op && cmp.AreEqual(c.Value, value))
+            else if (c.Operator == op && RuleValues.AreEqual(c.Value, value))
             {
                 return Proof.True;
             }
@@ -196,9 +196,9 @@ public static class QueryAnalyzer
     {
         public OperandKind Kind { get; private init; }
         public IReadOnlyList<string>? Field { get; private init; }
-        public RuleValue Value { get; private init; }
+        public Value Value { get; private init; }
         public static Operand AsField(IReadOnlyList<string> f) => new() { Kind = OperandKind.Field, Field = f };
-        public static Operand AsConst(RuleValue v) => new() { Kind = OperandKind.Const, Value = v };
+        public static Operand AsConst(Value v) => new() { Kind = OperandKind.Const, Value = v };
         public static readonly Operand Unknown = new() { Kind = OperandKind.Unknown };
     }
 
@@ -227,7 +227,7 @@ public static class QueryAnalyzer
         return false;
     }
 
-    private static bool TryConst(RuleExpression expr, RuleContext ctx, out RuleValue value)
+    private static bool TryConst(RuleExpression expr, RuleContext ctx, out Value value)
     {
         switch (expr)
         {
@@ -242,8 +242,8 @@ public static class QueryAnalyzer
                 break;                                            // unbound (per-result) wildcard → not const
 
             case MemberExpression m:
-                if (TryConst(m.Target, ctx, out var t) && t.Kind == RuleValueKind.Map &&
-                    t.AsMap.TryGetValue(m.Name, out var mv))
+                if (TryConst(m.Target, ctx, out var t) && t is MapValue tm &&
+                    tm.Fields.TryGetValue(m.Name, out var mv))
                 {
                     value = mv;
                     return true;
@@ -253,28 +253,28 @@ public static class QueryAnalyzer
             case IndexExpression ix:
                 if (TryConst(ix.Target, ctx, out var tt) && TryConst(ix.Index, ctx, out var idx))
                 {
-                    if (tt.Kind == RuleValueKind.Map && idx.Kind == RuleValueKind.String && tt.AsMap.TryGetValue(idx.AsString, out var iv))
+                    if (tt is MapValue map && idx is StringValue key && map.Fields.TryGetValue(key.Value, out var iv))
                     {
                         value = iv;
                         return true;
                     }
-                    if (tt.Kind == RuleValueKind.List && idx.Kind == RuleValueKind.Int && idx.AsInt >= 0 && idx.AsInt < tt.AsList.Count)
+                    if (tt is ArrayValue list && idx is IntegerValue { Value: var i } && i >= 0 && i < list.Values.Count)
                     {
-                        value = tt.AsList[(int)idx.AsInt];
+                        value = list.Values[(int)i];
                         return true;
                     }
                 }
                 break;
         }
-        value = RuleValue.Null;
+        value = RuleValues.Null;
         return false;
     }
 
-    private static bool? TryCompute(IRuleValueComparer cmp, RuleValue left, ComparisonOperator op, RuleValue right) => op switch
+    private static bool? TryCompute(Value left, ComparisonOperator op, Value right) => op switch
     {
-        ComparisonOperator.Eq => cmp.AreEqual(left, right),
-        ComparisonOperator.Ne => !cmp.AreEqual(left, right),
-        _ => cmp.TryCompare(left, right, out var c)
+        ComparisonOperator.Eq => RuleValues.AreEqual(left, right),
+        ComparisonOperator.Ne => !RuleValues.AreEqual(left, right),
+        _ => RuleValues.TryCompare(left, right, out var c)
             ? op switch { ComparisonOperator.Lt => c < 0, ComparisonOperator.Le => c <= 0, ComparisonOperator.Gt => c > 0, ComparisonOperator.Ge => c >= 0, _ => false }
             : null,
     };

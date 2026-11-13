@@ -1,3 +1,4 @@
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
@@ -12,26 +13,26 @@ namespace Winche.Rules.Tests;
 public class FunctionsAndPathsTests
 {
     private static RuleEngine Engine(string rules) =>
-        new(new StaticRuleSetRepository(RuleText.ParseRuleSet(rules)), new DefaultRuleValueComparer());
+        new(new StaticRuleSetRepository(RuleText.ParseRuleSet(rules)));
 
-    private static RuleValue Map(params (string Key, RuleValue Value)[] entries) =>
-        RuleValue.Map(entries.ToDictionary(e => e.Key, e => e.Value));
+    private static MapValue Map(params (string Key, Value Value)[] entries) =>
+        new MapValue(entries.ToDictionary(e => e.Key, e => e.Value));
 
-    private static RuleValue Auth(string uid, params (string Key, RuleValue Value)[] claims) =>
-        Map(("uid", RuleValue.String(uid)), ("token", Map([("uid", RuleValue.String(uid)), .. claims])));
+    private static Value Auth(string uid, params (string Key, Value Value)[] claims) =>
+        Map(("uid", new StringValue(uid)), ("token", Map([("uid", new StringValue(uid)), .. claims])));
 
-    private static RuleRequest Request(RuleValue auth, RuleValue? resource = null, IRuleResourceProvider? provider = null) => new()
+    private static RuleRequest Request(Value auth, Value? resource = null, IRuleResourceProvider? provider = null) => new()
     {
-        Resource = resource ?? RuleValue.Null,
+        Resource = resource ?? RuleValues.Null,
         Request = Map(("auth", auth)),
         Provider = provider,
     };
 
-    private sealed class Docs(Dictionary<string, RuleValue> docs) : IRuleResourceProvider
+    private sealed class Docs(Dictionary<string, Value> docs) : IRuleResourceProvider
     {
         public List<string> Asked { get; } = [];
         public Task<bool> ExistsAsync(string path, CancellationToken ct = default) { Asked.Add(path); return Task.FromResult(docs.ContainsKey(path)); }
-        public Task<RuleValue> GetAsync(string path, CancellationToken ct = default) { Asked.Add(path); return Task.FromResult(docs.GetValueOrDefault(path, RuleValue.Null)); }
+        public Task<Value> GetAsync(string path, CancellationToken ct = default) { Asked.Add(path); return Task.FromResult(docs.GetValueOrDefault(path, RuleValues.Null)); }
     }
 
     // ── paths ────────────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ public class FunctionsAndPathsTests
             """);
         var docs = new Docs(new()
         {
-            ["members/u1"] = Map(("role", RuleValue.String("editor"))),
+            ["members/u1"] = Map(("role", new StringValue("editor"))),
             ["projects/p1/owners/u1"] = Map(),
         });
         Assert.True(await engine.AllowsAsync(RuleOperation.Get, "projects/p1", Request(Auth("u1"), provider: docs)));
@@ -149,27 +150,27 @@ public class FunctionsAndPathsTests
         var engine = Engine(WithFunctions);
         Assert.True(await engine.AllowsAsync(RuleOperation.Get, "users/u1", Request(Auth("u1"))));
         Assert.False(await engine.AllowsAsync(RuleOperation.Get, "users/u2", Request(Auth("u1"))));
-        Assert.True(await engine.AllowsAsync(RuleOperation.Get, "users/u2", Request(Auth("u1", ("role", RuleValue.String("staff"))))));
-        Assert.False(await engine.AllowsAsync(RuleOperation.Get, "users/u1", Request(RuleValue.Null)));
+        Assert.True(await engine.AllowsAsync(RuleOperation.Get, "users/u2", Request(Auth("u1", ("role", new StringValue("staff"))))));
+        Assert.False(await engine.AllowsAsync(RuleOperation.Get, "users/u1", Request(RuleValues.Null)));
         Assert.True(await engine.AllowsAsync(RuleOperation.Get, "users/u1/notes/n1", Request(Auth("u1"))));
         // A function defined after its use, in a nested block, sees the outer block's functions.
         Assert.True(await engine.AllowsAsync(RuleOperation.Update, "users/u2/notes/n1",
-            Request(Auth("u1"), Map(("ownerId", RuleValue.String("u1"))))));
+            Request(Auth("u1"), Map(("ownerId", new StringValue("u1"))))));
         Assert.False(await engine.AllowsAsync(RuleOperation.Update, "users/u2/notes/n1",
-            Request(Auth("u1"), Map(("ownerId", RuleValue.String("u3"))))));
+            Request(Auth("u1"), Map(("ownerId", new StringValue("u3"))))));
     }
 
     [Fact]
     public void List_rules_through_functions_are_still_proved()
     {
         var rules = RuleText.ParseRuleSet(WithFunctions);
-        var asU1 = new RuleRequest { Request = Map(("auth", Auth("u1")), ("method", RuleValue.String("list"))) };
-        var byOwner = new QueryConstraints("notes", [new QueryConstraint(["ownerId"], ComparisonOperator.Eq, RuleValue.String("u1"))]);
-        var engine = new RuleEngine(new StaticRuleSetRepository(rules), new DefaultRuleValueComparer());
+        var asU1 = new RuleRequest { Request = Map(("auth", Auth("u1")), ("method", new StringValue("list"))) };
+        var byOwner = new QueryConstraints("notes", [new QueryConstraint(["ownerId"], ComparisonOperator.Eq, new StringValue("u1"))]);
+        var engine = new RuleEngine(new StaticRuleSetRepository(rules));
         Assert.True(engine.Allows(byOwner, asU1));
         Assert.False(engine.Allows(new QueryConstraints("notes", []), asU1));
         // Staff (from a token claim, through a let) may list users.
-        var asStaff = new RuleRequest { Request = Map(("auth", Auth("s", ("role", RuleValue.String("admin")))), ("method", RuleValue.String("list"))) };
+        var asStaff = new RuleRequest { Request = Map(("auth", Auth("s", ("role", new StringValue("admin")))), ("method", new StringValue("list"))) };
         Assert.True(engine.Allows(new QueryConstraints("users", []), asStaff));
         Assert.False(engine.Allows(new QueryConstraints("users", []), asU1));
     }
@@ -249,7 +250,7 @@ public class FunctionsAndPathsTests
         var b = RuleText.ParseRuleSet("function ok() { return false; }\nmatch b/{x} { allow get: if ok(); }");
         var merged = RuleSet.Merge([a, b]);
         Assert.Empty(RuleSetValidation.Validate(merged));
-        var engine = new RuleEngine(new StaticRuleSetRepository(merged), new DefaultRuleValueComparer());
+        var engine = new RuleEngine(new StaticRuleSetRepository(merged));
         var signedIn = Request(Auth("u1"));
         Assert.True(await engine.AllowsAsync(RuleOperation.Get, "a/1", signedIn));
         Assert.False(await engine.AllowsAsync(RuleOperation.Get, "b/1", signedIn));

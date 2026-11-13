@@ -40,7 +40,7 @@ public abstract record RuleExpression;
 
 /// <summary>A constant value.</summary>
 /// <param name="Value">The literal value.</param>
-public sealed record LiteralExpression(RuleValue Value) : RuleExpression;
+public sealed record LiteralExpression([property: JsonConverter(typeof(Json.RuleLiteralJsonConverter))] Value Value) : RuleExpression;
 
 /// <summary>A root variable: <c>request</c>, <c>resource</c>, or a path-pattern capture (e.g. <c>userId</c>).</summary>
 /// <param name="Name">The variable name.</param>

@@ -100,8 +100,8 @@ public static partial class RuleText
             {
                 // Precedence 5, not 7: '.' is a path character, so `/a/b.c` would read back as one path — a path
             // literal is bracketed before `.field`, `[i]` and `.method()`: `(/a/b).c`.
-            LiteralExpression { Value.Kind: RuleValueKind.Path } l when readable && IsPlainPath(l.Value.AsPath) => ("/" + l.Value.AsPath, 5),
-            LiteralExpression l => (Literal(l.Value), l.Value.IsNumber && l.Value.AsNumber < 0 ? 5 : 7),
+            LiteralExpression { Value: ReferenceValue { Path: var lp } } when readable && IsPlainPath(lp) => ("/" + lp, 5),
+            LiteralExpression l => (Literal(l.Value), l.Value is IntegerValue { Value: < 0 } or DoubleValue { Value: < 0 } ? 5 : 7),
                 VarExpression v => (Name(v.Name), 7),
                 MemberExpression m => ($"{Write(m.Target, 6)}.{Name(m.Name)}", 6),
                 IndexExpression ix => ($"{Write(ix.Target, 6)}[{Write(ix.Index, 0)}]", 6),
@@ -126,8 +126,8 @@ public static partial class RuleText
         {
             var args = call.Args;
             if (readable && call.Name == "path" && args.Count > 0
-                && args.All(a => a is not LiteralExpression || (a is LiteralExpression { Value.Kind: RuleValueKind.String } sl && IsPlainPath(sl.Value.AsString) && !sl.Value.AsString.Contains('/'))))
-                return (string.Concat(args.Select(a => a is LiteralExpression sl ? "/" + sl.Value.AsString : $"/$({Write(a, 0)})")), 5);
+                && args.All(a => a is not LiteralExpression || (a is LiteralExpression { Value: StringValue { Value: var ls } } && IsPlainPath(ls) && !ls.Contains('/'))))
+                return (string.Concat(args.Select(a => a is LiteralExpression { Value: StringValue { Value: var ls } } ? "/" + ls : $"/$({Write(a, 0)})")), 5);
             if (readable && args.Count == 2 && SetWord(call.Name) is { } word)
             {
                 if (args[0].Equals(ChangedKeysShape))
@@ -135,9 +135,9 @@ public static partial class RuleText
                 if (args[0] is CallExpression { Name: "keys", Args.Count: 1 } keys)
                     return ($"{Write(keys.Args[0], 5)} has {word} {Write(args[1], 5)}", 4);
             }
-            if (call.Name == "is" && args.Count == 2 && args[1] is LiteralExpression { Value.Kind: RuleValueKind.String } t
-                && Evaluation.RuleFunctions.TypeNames.Contains(t.Value.AsString))
-                return ($"{Write(args[0], 5)} is {t.Value.AsString}", 4);
+            if (call.Name == "is" && args.Count == 2 && args[1] is LiteralExpression { Value: StringValue { Value: var type } }
+                && Evaluation.RuleFunctions.TypeNames.Contains(type))
+                return ($"{Write(args[0], 5)} is {type}", 4);
             if (args.Count >= 1 && (Methods.Contains(call.Name) || (call.Name == "get" && args.Count == 3)))
                 return ($"{Write(args[0], 6)}.{Name(call.Name)}({string.Join(", ", args.Skip(1).Select(a => Write(a, 0)))})", 6);
             return ($"{Name(call.Name)}({string.Join(", ", args.Select(a => Write(a, 0)))})", 7);
@@ -161,19 +161,19 @@ public static partial class RuleText
 
     private static string Name(string s) => IsIdentifier(s) ? s : $"`{s.Replace("`", "``")}`";
 
-    private static string Literal(RuleValue v) => v.Kind switch
+    private static string Literal(Value v) => v switch
     {
-        RuleValueKind.Null => "null",
-        RuleValueKind.Bool => v.AsBool ? "true" : "false",
-        RuleValueKind.Int => v.AsInt.ToString(CultureInfo.InvariantCulture),
-        RuleValueKind.Double => Double(v.AsDouble),
-        RuleValueKind.String => Quote(v.AsString),
-        RuleValueKind.Timestamp => $"timestamp({Quote(v.AsTimestamp.ToString("O", CultureInfo.InvariantCulture))})",
-        RuleValueKind.Path => $"path({Quote(v.AsPath)})",
-        RuleValueKind.Bytes => $"bytes({Quote(Convert.ToBase64String(v.AsBytes))})",
-        RuleValueKind.List => $"[{string.Join(", ", v.AsList.Select(Literal))}]",
-        RuleValueKind.Map => $"{{{string.Join(", ", v.AsMap.Select(kv => $"{Quote(kv.Key)}: {Literal(kv.Value)}"))}}}",
-        _ => throw new ArgumentOutOfRangeException(nameof(v)),
+        NullValue => "null",
+        BooleanValue b => b.Value ? "true" : "false",
+        IntegerValue i => i.Value.ToString(CultureInfo.InvariantCulture),
+        DoubleValue d => Double(d.Value),
+        StringValue s => Quote(s.Value),
+        TimestampValue t => $"timestamp({Quote(t.Value.ToString("O", CultureInfo.InvariantCulture))})",
+        ReferenceValue r => $"path({Quote(r.Path)})",
+        BytesValue b => $"bytes({Quote(Convert.ToBase64String(b.Value))})",
+        ArrayValue a => $"[{string.Join(", ", a.Values.Select(Literal))}]",
+        MapValue m => $"{{{string.Join(", ", m.Fields.Select(kv => $"{Quote(kv.Key)}: {Literal(kv.Value)}"))}}}",
+        _ => throw new ArgumentOutOfRangeException(nameof(v), $"The rules language has no literal for a {RuleValues.TypeName(v)}."),
     };
 
     private static string Double(double d)
@@ -325,7 +325,7 @@ public static partial class RuleText
                 if (type.Kind != T.Ident || type.Quoted || !Evaluation.RuleFunctions.TypeNames.Contains(type.Text))
                     throw Error($"Expected a type after 'is' ({string.Join(", ", Evaluation.RuleFunctions.TypeNames)})", type);
                 Next();
-                return new CallExpression("is", [left, new LiteralExpression(RuleValue.String(type.Text))]);
+                return new CallExpression("is", [left, new LiteralExpression(new StringValue(type.Text))]);
             }
             return left;
         }
@@ -400,16 +400,16 @@ public static partial class RuleText
                     return new LiteralExpression(Number(t, negative: false));
                 case T.String:
                     Next();
-                    return new LiteralExpression(RuleValue.String(t.Text));
+                    return new LiteralExpression(new StringValue(t.Text));
                 case T.Ident when t.IsWord("true"):
                     Next();
-                    return new LiteralExpression(RuleValue.Bool(true));
+                    return new LiteralExpression(RuleValues.True);
                 case T.Ident when t.IsWord("false"):
                     Next();
-                    return new LiteralExpression(RuleValue.Bool(false));
+                    return new LiteralExpression(RuleValues.False);
                 case T.Ident when t.IsWord("null"):
                     Next();
-                    return new LiteralExpression(RuleValue.Null);
+                    return new LiteralExpression(RuleValues.Null);
                 case T.Ident when !t.Quoted && Keywords.Contains(t.Text):
                     throw Error($"Unexpected '{t.Text}'", t);
                 case T.Ident:
@@ -427,16 +427,16 @@ public static partial class RuleText
                     return inner;
                 case T.Op when t.Text == "[":
                     Next();
-                    var items = new List<RuleValue>();
+                    var items = new List<Value>();
                     if (!Accept("]"))
                     {
                         do items.Add(Constant()); while (Accept(","));
                         Expect("]");
                     }
-                    return new LiteralExpression(RuleValue.List(items));
+                    return new LiteralExpression(new ArrayValue(items));
                 case T.Op when t.Text == "{":
                     Next();
-                    var map = new Dictionary<string, RuleValue>(StringComparer.Ordinal);
+                    var map = new Dictionary<string, Value>(StringComparer.Ordinal);
                     if (!Accept("}"))
                     {
                         do
@@ -449,7 +449,7 @@ public static partial class RuleText
                         } while (Accept(","));
                         Expect("}");
                     }
-                    return new LiteralExpression(RuleValue.Map(map));
+                    return new LiteralExpression(new MapValue(map));
                 case T.End:
                     throw Error("The condition ended too early", t);
                 default:
@@ -502,23 +502,23 @@ public static partial class RuleText
                 else
                 {
                     while (i < raw.Length && raw[i] != '/') i++;
-                    parts.Add(new LiteralExpression(RuleValue.String(raw[start..i])));
+                    parts.Add(new LiteralExpression(new StringValue(raw[start..i])));
                 }
             }
 
-            if (parts.Count >= 3 && parts[0] is LiteralExpression { Value.Kind: RuleValueKind.String } p0 && p0.Value.AsString == "databases"
+            if (parts.Count >= 3 && parts[0] is LiteralExpression { Value: StringValue { Value: "databases" } }
                 && parts[1] is VarExpression { Name: "database" }
-                && parts[2] is LiteralExpression { Value.Kind: RuleValueKind.String } p2 && p2.Value.AsString == "documents")
+                && parts[2] is LiteralExpression { Value: StringValue { Value: "documents" } })
                 parts.RemoveRange(0, 3);
             if (parts.Count == 0) throw Error("A path needs at least one segment after /databases/$(database)/documents", t);
 
             return parts.All(x => x is LiteralExpression)
-                ? new LiteralExpression(RuleValue.Path(string.Join('/', parts.Select(x => ((LiteralExpression)x).Value.AsString))))
+                ? new LiteralExpression(new ReferenceValue(string.Join('/', parts.Select(x => ((StringValue)((LiteralExpression)x).Value).Value))))
                 : new CallExpression("path", parts);
         }
 
         // A list or map element: only constants (the expression model has no list or map construction).
-        private RuleValue Constant()
+        private Value Constant()
         {
             var at = Peek;
             var e = Unary();
@@ -530,38 +530,37 @@ public static partial class RuleText
         {
             if (name.Text is not ("timestamp" or "path" or "bytes" or "float")) return null;
             // path(a, b, …) with anything but one constant string joins its parts at evaluation.
-            if (name.Text == "path" && args is not [LiteralExpression { Value.Kind: RuleValueKind.String }]) return null;
-            if (args is not [LiteralExpression { Value.Kind: RuleValueKind.String } arg])
+            if (name.Text == "path" && args is not [LiteralExpression { Value: StringValue }]) return null;
+            if (args is not [LiteralExpression { Value: StringValue { Value: var s } }])
                 throw Error($"{name.Text}() takes one string", name);
-            var s = arg.Value.AsString;
             switch (name.Text)
             {
                 case "timestamp":
                     return DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var ts)
-                        ? new LiteralExpression(RuleValue.Timestamp(ts))
+                        ? new LiteralExpression(new TimestampValue(ts))
                         : throw Error($"'{s}' is not an ISO-8601 timestamp", name);
                 case "path":
-                    return new LiteralExpression(RuleValue.Path(s));
+                    return new LiteralExpression(new ReferenceValue(s));
                 case "bytes":
-                    try { return new LiteralExpression(RuleValue.Bytes(Convert.FromBase64String(s))); }
+                    try { return new LiteralExpression(new BytesValue(Convert.FromBase64String(s))); }
                     catch (FormatException) { throw Error($"'{s}' is not base64", name); }
                 default:
                     // Rules are stored as JSON, which has no NaN or Infinity.
                     return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) && double.IsFinite(d)
-                        ? new LiteralExpression(RuleValue.Double(d))
+                        ? new LiteralExpression(new DoubleValue(d))
                         : throw Error($"'{s}' is not a finite number", name);
             }
         }
 
-        private RuleValue Number(Token t, bool negative)
+        private Value Number(Token t, bool negative)
         {
             var s = negative ? "-" + t.Text : t.Text;
             if (!t.Text.Contains('.') && !t.Text.Contains('e') && !t.Text.Contains('E'))
                 return long.TryParse(s, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var l)
-                    ? RuleValue.Int(l)
+                    ? new IntegerValue(l)
                     : throw Error($"{s} is out of range for an integer", t);
             return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)
-                ? RuleValue.Double(d)
+                ? new DoubleValue(d)
                 : throw Error($"'{s}' is not a number", t);
         }
 

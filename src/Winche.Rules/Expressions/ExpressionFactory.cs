@@ -15,34 +15,34 @@ namespace Winche.Rules.Expressions;
 internal static class Expr
 {
     /// <summary>
-    /// A literal from a <see cref="RuleValue"/>.
+    /// A literal from a <see cref="Value"/>.
     /// </summary>
-    public static RuleExpression Value(RuleValue value) => new LiteralExpression(value);
+    public static RuleExpression Value(Value value) => new LiteralExpression(value);
 
     /// <summary>
     /// A string literal.
     /// </summary>
-    public static RuleExpression Const(string value) => Value(RuleValue.String(value));
+    public static RuleExpression Const(string value) => Value(new StringValue(value));
 
     /// <summary>
     /// An integer literal.
     /// </summary>
-    public static RuleExpression Const(long value) => Value(RuleValue.Int(value));
+    public static RuleExpression Const(long value) => Value(new IntegerValue(value));
 
     /// <summary>
     /// A double literal.
     /// </summary>
-    public static RuleExpression Const(double value) => Value(RuleValue.Double(value));
+    public static RuleExpression Const(double value) => Value(new DoubleValue(value));
 
     /// <summary>
     /// A boolean literal.
     /// </summary>
-    public static RuleExpression Const(bool value) => Value(RuleValue.Bool(value));
+    public static RuleExpression Const(bool value) => Value(RuleValues.Bool(value));
 
     /// <summary>
     /// The null literal.
     /// </summary>
-    public static RuleExpression Null { get; } = Value(RuleValue.Null);
+    public static RuleExpression Null { get; } = Value(RuleValues.Null);
 
     /// <summary>
     /// A root variable (<c>request</c>, <c>resource</c>, or a path capture).
@@ -107,7 +107,7 @@ internal static class Expr
     /// <summary>
     /// A constant list of strings, e.g. for <c>hasOnly</c> or <c>in</c>.
     /// </summary>
-    public static RuleExpression Strings(params string[] values) => Value(RuleValue.List([.. values.Select(RuleValue.String)]));
+    public static RuleExpression Strings(params string[] values) => Value(RuleValues.Strings(values));
 
     /// <summary>
     /// Logical AND of all operands.

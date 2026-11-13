@@ -1,3 +1,4 @@
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
@@ -11,14 +12,13 @@ public class RuleEngineHotSwapTests
     private static RuleSet DenyAll() => new(new List<MatchBlock>());
 
     private static RuleSet AllowReadDocs() => RuleSetBuilder.Build(r =>
-        r.Match("docs/{id}", m => m.Allow(RuleOperations.Read, new LiteralExpression(RuleValue.Bool(true)))));
+        r.Match("docs/{id}", m => m.Allow(RuleOperations.Read, new LiteralExpression(RuleValues.True))));
 
     [Fact]
     public async Task AllowsAsync_ReflectsRepositoryUpdate()
     {
         var repository = new MutableRuleSetRepository(DenyAll());
-        var comparer = new DefaultRuleValueComparer();
-        var engine = new RuleEngine(repository, comparer);
+        var engine = new RuleEngine(repository);
 
         Assert.False(await engine.AllowsAsync(RuleOperation.Get, "docs/d1", new RuleRequest()));
 
@@ -31,12 +31,11 @@ public class RuleEngineHotSwapTests
     public void Allows_Query_ReflectsRepositoryUpdate()
     {
         var repository = new MutableRuleSetRepository(DenyAll());
-        var comparer = new DefaultRuleValueComparer();
-        var engine = new RuleEngine(repository, comparer);
+        var engine = new RuleEngine(repository);
         var query = new QueryConstraints("docs", []);
         var request = new RuleRequest
         {
-            Request = RuleValue.Map(new Dictionary<string, RuleValue> { ["method"] = RuleValue.String("list") }),
+            Request = new MapValue(new Dictionary<string, Value> { ["method"] = new StringValue("list") }),
         };
 
         Assert.False(engine.Allows(query, request));
@@ -49,7 +48,6 @@ public class RuleEngineHotSwapTests
     [Fact]
     public void Ctor_NullRepository_Throws()
     {
-        var comparer = new DefaultRuleValueComparer();
-        Assert.Throws<ArgumentNullException>(() => new RuleEngine(null!, comparer));
+        Assert.Throws<ArgumentNullException>(() => new RuleEngine(null!));
     }
 }

@@ -2,7 +2,7 @@
 
 [![NuGet](https://img.shields.io/nuget/v/Winche.Rules.svg)](https://www.nuget.org/packages/Winche.Rules)
 
-A **standalone, declarative, JSON-serializable authorization rules engine** for .NET. You write access rules for path-based resources in a Firestore-style rules language (stored as JSON), and the engine evaluates them **in memory** — no backend call required. It is **backend-agnostic**: you connect it to your own resource store and query model through small adapter ports. Winche.Rules powers Winche.Database's access control, but it carries no dependency on that library and can be used in any .NET project that authorizes resources addressed by path against per-request caller claims.
+A **standalone, declarative, JSON-serializable authorization rules engine** for .NET. You write access rules for path-based resources in a Firestore-style rules language (stored as JSON), and the engine evaluates them **in memory** — no backend call required. It is **backend-agnostic**: you connect it to your own resource store and query model through small adapter ports. Winche.Rules powers Winche.Database's access control, but it carries no dependency on that library (only on Winche.Core's shared value model) and can be used in any .NET project that authorizes resources addressed by path against per-request caller claims.
 
 > **Writing rules?** Start with the **[Rules Language Guide](GUIDE.md)** — the syntax, what conditions can use,
 > common patterns, how queries are checked, testing, and coming from Firebase. This README is the .NET API.
@@ -15,7 +15,7 @@ A "resource" here is anything you can address by a path — a record, a file, a 
 
 1. [Core ideas](#core-ideas)
 2. [How it works](#how-it-works)
-3. [The value model](#the-value-model-rulevalue)
+3. [The value model](#the-value-model-winchevalues)
 4. [Defining rules](#defining-rules)
 5. [The engine](#the-engine-ruleengine)
 6. [Dependency injection](#dependency-injection-addwincherules)
@@ -23,7 +23,7 @@ A "resource" here is anything you can address by a path — a record, a file, a 
 8. [Evaluating single-resource operations](#evaluating-single-resource-operations)
 9. [Authorizing queries (list)](#authorizing-queries-list)
 10. [Cross-resource conditions (get / exists)](#cross-resource-conditions-get--exists)
-11. [Comparison semantics](#comparison-semantics-irulevaluecomparer)
+11. [Comparison semantics](#comparison-semantics)
 12. [Rules as data (JSON)](#rules-as-data-json)
 13. [Pluggability — connecting your project](#pluggability--connecting-your-project)
 14. [Composing rulesets](#composing-rulesets)
@@ -60,11 +60,11 @@ flowchart LR
     end
 
     subgraph Engine["Winche.Rules"]
-        RE["RuleEngine<br/>(RuleSet + comparer)"]
+        RE["RuleEngine<br/>(RuleSet)"]
     end
 
     Claims --> RE
-    Res -->|map to RuleValue| RE
+    Res -->|Winche.Values Value| RE
     Q -->|map to QueryConstraints| RE
     RE --> Dec{"Allow?"}
     Dec -->|true| OK["Operation proceeds"]
@@ -74,35 +74,41 @@ flowchart LR
 
 ---
 
-## The value model (`RuleValue`)
+## The value model (`Winche.Values`)
 
-Everything the engine touches is a `RuleValue` — a neutral, JSON-ish value independent of any storage type. A resource is a `RuleValue.Map` of field names to values.
+Rules evaluate directly on Winche.Core's shared value model (namespace `Winche.Values`, package `Winche.Core`) — the same values Winche.Database stores, so no conversion is needed. `Value` is an abstract record; a resource is a `MapValue` of field names to values.
 
 ```csharp
-using Winche.Rules;
+using Winche.Values;
 
-// Scalar factories
-RuleValue.Null
-RuleValue.Bool(true)
-RuleValue.Int(42L)
-RuleValue.Double(3.14)
-RuleValue.String("hello")
-RuleValue.Bytes(byteArray)
-RuleValue.Timestamp(DateTimeOffset.UtcNow)
-RuleValue.Path("users/u1")
+// Scalars
+new NullValue()
+new BooleanValue(true)
+new IntegerValue(42L)
+new DoubleValue(3.14)
+new StringValue("hello")
+new BytesValue(byteArray)
+new TimestampValue(DateTimeOffset.UtcNow)        // microsecond precision
+new ReferenceValue("users/u1")                    // a path
+new GeoPointValue(51.5, -0.12)                    // latitude, longitude
 
 // Collections
-RuleValue.List(new[] { RuleValue.String("a"), RuleValue.String("b") })
-RuleValue.Map(new Dictionary<string, RuleValue>
+new ArrayValue([new StringValue("a"), new StringValue("b")])
+new MapValue(new Dictionary<string, Value>
 {
-    ["name"]  = RuleValue.String("Alice"),
-    ["age"]   = RuleValue.Int(30),
+    ["name"] = new StringValue("Alice"),
+    ["age"]  = new IntegerValue(30),
 })
+
+// From plain .NET objects (e.g. claims)
+Value auth = Value.FromObject(new Dictionary<string, object?> { ["uid"] = "u1" });
 ```
 
-`RuleValueKind` enumerates all kinds: `Null`, `Bool`, `Int`, `Double`, `String`, `Bytes`, `Timestamp`, `Path`, `List`, `Map`.
+`Winche.Rules.RuleValues` adds the rules' view of values: `Null`, `True`, `False`, `Bool(bool)`, `Strings(IEnumerable<string>)`, `TypeName(Value)` (the rules-language type name: `string int float bool null map list timestamp bytes path latlng`), `AreEqual` and `TryCompare`.
 
-Numbers compare across `Int`/`Double` by numeric value. Comparison across other kinds is undefined and denies. (The exact equality/ordering rules are pluggable — see [Comparison semantics](#comparison-semantics-irulevaluecomparer).)
+Path captures bind as values too: `{id}` is a `StringValue`, a recursive `{rest=**}` a `ReferenceValue`; `path(...)` and `/a/b` literals are `ReferenceValue`s.
+
+Numbers compare across `IntegerValue`/`DoubleValue` by numeric value. Comparison across other types is undefined and denies — see [Comparison semantics](#comparison-semantics).
 
 ---
 
@@ -161,10 +167,11 @@ Besides `exists(path)` / `get(path)`, conditions can call these pure functions:
 | `m.keys()` | a map's keys (sorted) |
 | `l.hasOnly([...])` / `l.hasAll([...])` / `l.hasAny([...])` | every element of `l` is listed / `l` has all / any of them |
 | `after.diff(before)` | how two maps differ; then `.affectedKeys()`, `.addedKeys()`, `.removedKeys()`, `.changedKeys()`, `.unchangedKeys()` |
-| `x is string` | type check: `string int float number bool null map list timestamp bytes path` |
+| `x is string` | type check: `string int float number bool null map list timestamp bytes path latlng` |
 | `s.matches('re')` | the whole string matches (100 ms limit; an invalid or slow regex denies) |
 | `s.lower()` / `s.upper()` | case conversion |
 | `m.get('key', default)` | the value at a key, or `default` when absent |
+| `g.latitude` / `g.longitude` | a `latlng`'s coordinates (a map that merely has those keys is not a `latlng`) |
 
 A wrong argument or type is an evaluation error, which denies — like a missing field.
 
@@ -255,14 +262,15 @@ Text and the JSON form round-trip: formatting then parsing gives the same expres
 
 ## The engine (`RuleEngine`)
 
-`RuleEngine` is the recommended entry point. It reads its `RuleSet` from an `IRuleSetRepository` on every evaluation and applies a fixed `IRuleValueComparer`, evaluating over a per-request `RuleRequest`. Because the engine owns the comparer, callers never thread it through individual calls; because it reads the ruleset per call, the rules can be hot-swapped (see [Hot-swapping rules at runtime](#hot-swapping-rules-at-runtime)).
+`RuleEngine` is the recommended entry point. It reads its `RuleSet` from an `IRuleSetRepository` on every evaluation, evaluating over a per-request `RuleRequest`. Because it reads the ruleset per call, the rules can be hot-swapped (see [Hot-swapping rules at runtime](#hot-swapping-rules-at-runtime)).
 
 ```csharp
 using Winche.Rules;
 using Winche.Rules.Evaluation;
+using Winche.Values;
 
 // Frozen engine: wrap a fixed ruleset in a StaticRuleSetRepository.
-var engine = new RuleEngine(new StaticRuleSetRepository(rules), new DefaultRuleValueComparer());
+var engine = new RuleEngine(new StaticRuleSetRepository(rules));
 
 // Single-resource operation (get / create / update / delete)
 bool allowed = await engine.AllowsAsync(
@@ -270,14 +278,14 @@ bool allowed = await engine.AllowsAsync(
     "users/u1",
     new RuleRequest
     {
-        Resource = RuleValue.Map(new Dictionary<string, RuleValue>
+        Resource = new MapValue(new Dictionary<string, Value>
         {
-            ["ownerId"] = RuleValue.String("u1"),
+            ["ownerId"] = new StringValue("u1"),
         }),
-        Request = RuleValue.Map(new Dictionary<string, RuleValue>
+        Request = new MapValue(new Dictionary<string, Value>
         {
-            ["method"] = RuleValue.String("get"),
-            ["auth"]   = RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String("u1") }),
+            ["method"] = new StringValue("get"),
+            ["auth"]   = new MapValue(new Dictionary<string, Value> { ["uid"] = new StringValue("u1") }),
         }),
         // Provider is only needed when rules call get()/exists()
         Provider = null,
@@ -291,12 +299,10 @@ bool listAllowed = engine.Allows(constraints, new RuleRequest { Request = /* req
 
 | Member | Meaning |
 | - | - |
-| `Resource` | The existing resource as a `RuleValue.Map` (whatever field shape your rules navigate), or `RuleValue.Null`. |
+| `Resource` | The existing resource as a `MapValue` (whatever field shape your rules navigate), or `RuleValues.Null`. |
 | `Request` | The request map — `auth`, `method`, `time`, and `resource` (the incoming map) as needed. |
-| `Params` | Extra params; path-pattern captures bound by the engine take precedence. Defaults to none. |
+| `Params` | Extra params (`IReadOnlyDictionary<string, Value>`); path-pattern captures bound by the engine take precedence. Defaults to none. |
 | `Provider` | An `IRuleResourceProvider` for `get()`/`exists()`; `null` when no rule uses them. |
-
-The comparer is supplied by the engine, so it is intentionally **not** a field of `RuleRequest`.
 
 > The static entry points `RuleSetEvaluator.AllowsAsync` and `QueryAnalyzer.Allows` (which take a `RuleContext`) remain available as a lower-level API — `RuleEngine` is a thin facade over them. See [Evaluating single-resource operations](#evaluating-single-resource-operations).
 
@@ -304,7 +310,7 @@ The comparer is supplied by the engine, so it is intentionally **not** a field o
 
 ## Dependency injection (`AddWincheRules`)
 
-The `Winche.Rules.DependencyInjection` namespace registers a configured `RuleEngine` as a singleton. It depends only on `Microsoft.Extensions.DependencyInjection.Abstractions`.
+The `Winche.Rules.DependencyInjection` namespace registers a configured `RuleEngine` as a singleton. Besides Winche.Core, it depends only on `Microsoft.Extensions.DependencyInjection.Abstractions`.
 
 ```csharp
 using Winche.Rules.DependencyInjection;
@@ -316,21 +322,19 @@ var ruleset = RuleText.ParseRuleSet("""
     """);
 
 services.AddWincheRules(o => o
-    .WithMutableRuleSetRepository(ruleset)   // hot-swappable; or WithStaticRuleSetRepository(ruleset) for a frozen engine
-    // .WithRuleValueComparer(myComparer)        // optional; defaults to DefaultRuleValueComparer
-);
+    .WithMutableRuleSetRepository(ruleset));   // hot-swappable; or WithStaticRuleSetRepository(ruleset) for a frozen engine
 
 // elsewhere
 var engine = provider.GetRequiredService<RuleEngine>();
 ```
 
-`WincheRulesOptions` is a fluent builder: `WithMutableRuleSetRepository(RuleSet?)` (hot-swappable), `WithStaticRuleSetRepository(RuleSet)` (frozen), `WithRuleSetRepository(IRuleSetRepository)` (your own source), and `WithRuleValueComparer(IRuleValueComparer)`. The non-keyed overload registers a single `RuleEngine` over the configured repository and comparer (no cross-ruleset merge); it is registered with `TryAddSingleton`. If the repository is mutable, its `IMutableRuleSetRepository` write side is registered too, so you can hot-swap even the non-keyed engine.
+`WincheRulesOptions` is a fluent builder: `WithMutableRuleSetRepository(RuleSet?)` (hot-swappable), `WithStaticRuleSetRepository(RuleSet)` (frozen), and `WithRuleSetRepository(IRuleSetRepository)` (your own source). The non-keyed overload registers a single `RuleEngine` over the configured repository (no cross-ruleset merge); it is registered with `TryAddSingleton`. If the repository is mutable, its `IMutableRuleSetRepository` write side is registered too, so you can hot-swap even the non-keyed engine.
 
-> For **per-type isolation** — one independent engine per resource type — use the keyed overload `AddWincheRules(serviceKey, …)` — see [Hot-swapping rules at runtime](#hot-swapping-rules-at-runtime). Keyed registrations are **never** merged: each key is an independent engine with its own ruleset and comparer.
+> For **per-type isolation** — one independent engine per resource type — use the keyed overload `AddWincheRules(serviceKey, …)` — see [Hot-swapping rules at runtime](#hot-swapping-rules-at-runtime). Keyed registrations are **never** merged: each key is an independent engine with its own ruleset.
 
 ```mermaid
 flowchart LR
-    A["AddWincheRules(o =><br/>o.WithMutableRuleSetRepository(...)<br/>.WithRuleValueComparer(...))"] --> RS[("IRuleSetRepository<br/>+ IRuleValueComparer")]
+    A["AddWincheRules(o =><br/>o.WithMutableRuleSetRepository(...))"] --> RS[("IRuleSetRepository")]
     A --> RE["RuleEngine<br/>singleton"]
     RS --> RE
     RE --> App["Resolved by your services"]
@@ -356,7 +360,7 @@ keeps the snapshot it started with, and the next one observes the new rules — 
 
 ```csharp
 var repo   = new MutableRuleSetRepository(initialRules);
-var engine = new RuleEngine(repo, comparer);
+var engine = new RuleEngine(repo);
 
 bool before = await engine.AllowsAsync(RuleOperation.Get, "docs/d1", request);  // e.g. false
 
@@ -368,9 +372,9 @@ bool after  = await engine.AllowsAsync(RuleOperation.Get, "docs/d1", request);  
 ### One independent engine per resource type (keyed DI)
 
 When a consumer runs the library for **multiple resource types**, each type typically has its own rule
-source, its own reload cadence, and its own comparison semantics. Register one **keyed** engine per type
+source and its own reload cadence. Register one **keyed** engine per type
 with `AddWincheRules(serviceKey, …)`. Keyed registrations are fully isolated — **never merged** — each
-with its own ruleset, its own `IRuleValueComparer`, and (when mutable) its own `IMutableRuleSetRepository`.
+with its own ruleset and (when mutable) its own `IMutableRuleSetRepository`.
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -383,12 +387,10 @@ var documentsRules = RuleText.ParseRuleSet("""
     """);
 
 services.AddWincheRules("documents", o => o
-    .WithMutableRuleSetRepository(documentsRules)
-    .WithRuleValueComparer(documentsComparer));
+    .WithMutableRuleSetRepository(documentsRules));
 
 services.AddWincheRules("orders", o => o
-    .WithMutableRuleSetRepository(ordersRules)
-    .WithRuleValueComparer(ordersComparer));       // a different comparer per type
+    .WithStaticRuleSetRepository(ordersRules));    // frozen
 
 // Evaluate — inject the engine for a type by key:
 public sealed class DocumentService([FromKeyedServices("documents")] RuleEngine engine) { /* ... */ }
@@ -433,7 +435,7 @@ flowchart LR
 
 ## Evaluating single-resource operations
 
-The lower-level static API for `get`, `create`, `update`, and `delete` is `RuleSetEvaluator.AllowsAsync`, which takes a `RuleContext` (the comparer is a field of the context here). For `list` (queries), use `QueryAnalyzer` instead (see the next section).
+The lower-level static API for `get`, `create`, `update`, and `delete` is `RuleSetEvaluator.AllowsAsync`, which takes a `RuleContext`. For `list` (queries), use `QueryAnalyzer` instead (see the next section).
 
 ```mermaid
 flowchart TD
@@ -463,25 +465,25 @@ bool allowed = await RuleSetEvaluator.AllowsAsync(
 
 ### Building a `RuleContext`
 
-`RuleContext` carries everything the condition needs. You build it from your own types by converting them to `RuleValue`.
+`RuleContext` carries everything the condition needs. Its values are `Winche.Values` values — if your store already uses them, pass them straight through.
 
 ```csharp
 var context = new RuleContext
 {
     // The existing resource as a map — its field layout is entirely yours.
-    // Set to RuleValue.Null when the resource does not exist (e.g. for a create).
-    Resource = RuleValue.Map(new Dictionary<string, RuleValue>
+    // Set to RuleValues.Null when the resource does not exist (e.g. for a create).
+    Resource = new MapValue(new Dictionary<string, Value>
     {
-        ["ownerId"] = RuleValue.String("u1"),
+        ["ownerId"] = new StringValue("u1"),
     }),
 
     // The request object — a map with at minimum "auth" and "method"
-    Request = RuleValue.Map(new Dictionary<string, RuleValue>
+    Request = new MapValue(new Dictionary<string, Value>
     {
-        ["method"]   = RuleValue.String("get"),
-        ["auth"]     = RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String("u1") }),
+        ["method"]   = new StringValue("get"),
+        ["auth"]     = new MapValue(new Dictionary<string, Value> { ["uid"] = new StringValue("u1") }),
         // Include "resource" (the post-write map) for create/update
-        ["resource"] = RuleValue.Null,
+        ["resource"] = RuleValues.Null,
     }),
 
     // Optionally pass extra params (path captures added by the evaluator take precedence)
@@ -489,9 +491,6 @@ var context = new RuleContext
 
     // Implement IRuleResourceProvider only when rules use get()/exists()
     Provider = null,
-
-    // Optional: a custom comparer (defaults to DefaultRuleValueComparer)
-    // Comparer = myComparer,
 };
 ```
 
@@ -523,6 +522,7 @@ using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
 using Winche.Rules.Querying;
 using Winche.Rules.Text;
+using Winche.Values;
 
 // Rule: allow read if resource.ownerId == request.auth.uid
 RuleSet rules = RuleText.ParseRuleSet("""
@@ -535,16 +535,16 @@ RuleSet rules = RuleText.ParseRuleSet("""
 // The field path matches how your rule navigates the resource (here: resource.ownerId).
 var constrainedQuery = new QueryConstraints(
     collection: "users",
-    constraints: [new QueryConstraint(["ownerId"], ComparisonOperator.Eq, RuleValue.String("u1"))]);
+    constraints: [new QueryConstraint(["ownerId"], ComparisonOperator.Eq, new StringValue("u1"))]);
 
 var openQuery = new QueryConstraints("users", []);
 
 var context = new RuleContext
 {
-    Request = RuleValue.Map(new Dictionary<string, RuleValue>
+    Request = new MapValue(new Dictionary<string, Value>
     {
-        ["method"] = RuleValue.String("list"),
-        ["auth"]   = RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String("u1") }),
+        ["method"] = new StringValue("list"),
+        ["auth"]   = new MapValue(new Dictionary<string, Value> { ["uid"] = new StringValue("u1") }),
     }),
 };
 
@@ -564,7 +564,7 @@ The analyzer handles:
 
 The analyzer **rejects** (returns `false`) for any rule or query it cannot prove, including those involving `get()`/`exists()`, `in`, ternaries, or per-result path wildcards compared against `auth.uid`.
 
-> **Soundness note.** The analyzer's proof is only as faithful as the comparer it uses to reason about values. When you embed Winche.Rules in a store, supply an `IRuleValueComparer` whose equality/ordering matches *exactly* how your store executes queries — otherwise the prover could declare a query safe whose real result set differs. See [Comparison semantics](#comparison-semantics-irulevaluecomparer).
+> **Soundness note.** The analyzer's proof is only as faithful as its comparison of values. Rules compare exactly as Winche.Database orders (`ValueComparer.Instance`), so its proofs agree with that store. If you embed Winche.Rules in a different store, its equality/ordering must match the database's order — otherwise the prover could declare a query safe whose real result set differs. See [Comparison semantics](#comparison-semantics).
 
 ---
 
@@ -575,17 +575,18 @@ Rules can reference **other** resources via `get(path)` and `exists(path)`. You 
 ```csharp
 using Winche.Rules;
 using Winche.Rules.Evaluation;
+using Winche.Values;
 
 public sealed class MyResourceProvider(IMyStore store) : IRuleResourceProvider
 {
     public async Task<bool> ExistsAsync(string path, CancellationToken ct = default)
         => await store.ExistsAsync(path, ct);
 
-    public async Task<RuleValue> GetAsync(string path, CancellationToken ct = default)
+    public async Task<Value> GetAsync(string path, CancellationToken ct = default)
     {
         var item = await store.GetAsync(path, ct);
-        if (item is null) return RuleValue.Null;
-        return RuleValue.Map(/* convert item's fields to a Dictionary<string, RuleValue> */);
+        if (item is null) return RuleValues.Null;
+        return Value.FromObject(item.Fields);   // or build a MapValue; pass Winche.Values maps straight through
     }
 }
 ```
@@ -600,7 +601,7 @@ RuleSet rules = RuleText.ParseRuleSet("""
     }
     """);
 
-var engine = new RuleEngine(new StaticRuleSetRepository(rules), new DefaultRuleValueComparer());
+var engine = new RuleEngine(new StaticRuleSetRepository(rules));
 bool allowed = await engine.AllowsAsync(RuleOperation.Get, "docs/d1", new RuleRequest
 {
     Request  = /* ... */,
@@ -612,23 +613,12 @@ Note: `QueryAnalyzer` **always rejects** queries against rules that use `get()`/
 
 ---
 
-## Comparison semantics (`IRuleValueComparer`)
+## Comparison semantics
 
-Equality (`==`, `!=`, `in`) and ordering (`<`, `<=`, `>`, `>=`) are pluggable through `IRuleValueComparer`. The engine and the query analyzer use it for every value comparison.
+Equality (`==`, `!=`, `in`) and ordering (`<`, `<=`, `>`, `>=`) are fixed — there is no plug point. Rules compare exactly as the database orders values (`ValueComparer.Instance`), so the query analyzer's proofs agree with the store:
 
-```csharp
-namespace Winche.Rules.Evaluation;
-
-public interface IRuleValueComparer
-{
-    bool AreEqual(RuleValue a, RuleValue b);
-    bool TryCompare(RuleValue a, RuleValue b, out int result);   // false ⇒ un-orderable
-}
-```
-
-`new DefaultRuleValueComparer()` is used when you don't supply one: numbers compare across `Int`/`Double`; strings/paths use ordinal order; un-orderable kind pairs (null/list/map, or mixed kinds) return `false`.
-
-Supply your own — via `new RuleEngine(repository, myComparer)`, `RuleContext.Comparer`, or `WincheRulesOptions.WithRuleValueComparer(...)` — when the engine must agree with a host system's comparison rules. This matters most for `QueryAnalyzer`: its "provably safe" proof is only valid if it compares values the same way your store executes the query.
+- **Equal** (`RuleValues.AreEqual`) — same type (ints and floats are both numbers) and equal under `ValueComparer`. Values of different types are never equal.
+- **Ordered** (`RuleValues.TryCompare`) — values of the same type order as the database orders them; different types, or NaN, have no order, and ordering them is an error (which denies).
 
 ---
 
@@ -651,20 +641,21 @@ string exprJson          = RuleJson.Serialize(RuleText.Parse("resource.ownerId =
 RuleExpression restored2 = RuleJson.DeserializeExpr(exprJson);
 ```
 
-Expression nodes use a `kind` discriminator: `"literal"`, `"variable"`, `"member"`, `"index"`, `"comparison"`, `"and"`, `"or"`, `"not"`, `"in"`, `"conditional"`, `"call"`. `RuleValue` uses natural JSON for common kinds and tagged single-key objects for kinds JSON cannot faithfully represent:
+Expression nodes use a `kind` discriminator: `"literal"`, `"variable"`, `"member"`, `"index"`, `"comparison"`, `"and"`, `"or"`, `"not"`, `"in"`, `"conditional"`, `"call"`. Literal values (`LiteralExpression.Value`) are written by `RuleLiteralJsonConverter` (also in `RuleJson.Options`): natural JSON for common types and tagged single-key objects for types JSON cannot faithfully represent. (Winche.Core's own `Value` JSON converter is the database wire format — a different shape.)
 
-| Kind | JSON representation |
+| Value | JSON representation |
 | - | - |
-| `Null` | `null` |
-| `Bool` | `true` / `false` |
-| `String` | `"..."` |
-| `List` | `[...]` |
-| `Map` | `{...}` |
-| `Int` | `{"$integer":"42"}` |
-| `Double` | `{"$double":3.14}` |
-| `Timestamp` | `{"$timestamp":"2025-01-01T00:00:00+00:00"}` |
-| `Bytes` | `{"$bytes":"<base64>"}` |
-| `Path` | `{"$path":"users/u1"}` |
+| `NullValue` | `null` |
+| `BooleanValue` | `true` / `false` |
+| `StringValue` | `"..."` |
+| `ArrayValue` | `[...]` |
+| `MapValue` | `{...}` |
+| `IntegerValue` | `{"$integer":"42"}` |
+| `DoubleValue` | `{"$double":3.14}` |
+| `TimestampValue` | `{"$timestamp":"2025-01-01T00:00:00+00:00"}` |
+| `BytesValue` | `{"$bytes":"<base64>"}` |
+| `ReferenceValue` | `{"$path":"users/u1"}` |
+| `GeoPointValue` | `{"$latlng":[51.5,-0.12]}` |
 
 Map field names must not begin with `$` (it is reserved for the tagged-value encoding above).
 
@@ -674,13 +665,11 @@ Map field names must not begin with `$` (it is reserved for the tagged-value enc
 
 The engine needs a few adapters, all of which you provide:
 
-1. **Entity → `RuleValue`** — convert each resource from your storage type to a `RuleValue.Map`. The map's field layout is entirely yours; your rules navigate whatever keys you put in it. This is pure mapping code; no interface is required.
+1. **Entity → `Value`** — if your store already uses `Winche.Values`, there is nothing to convert. Otherwise build a `MapValue` (or use `Value.FromObject`) for each resource. The map's field layout is entirely yours; your rules navigate whatever keys you put in it. No interface is required.
 
 2. **Query → `QueryConstraints`** — map each `where` clause of your query to a `QueryConstraint(fieldPath, op, value)` and wrap them in a `QueryConstraints(collection, constraints)`.
 
 3. **Store → `IRuleResourceProvider`** — implement `ExistsAsync`/`GetAsync` over your backing store. Only required when rules use `get()`/`exists()`.
-
-4. **Comparison → `IRuleValueComparer`** *(optional)* — supply one when the engine must match your store's exact equality/ordering semantics.
 
 The engine fits any system that has **resources addressed by path** and **per-request caller claims**. The caller claims shape is whatever you put in `request.auth`; the conditions reference it as `request.auth`.
 
@@ -707,27 +696,30 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 
 | Type | Role |
 | - | - |
-| `RuleValue` | The universal value struct. Factories: `Null`, `Bool`, `Int`, `Double`, `String`, `Bytes`, `Timestamp`, `Path`, `List`, `Map`. |
-| `RuleValueKind` | Enum of all value kinds. |
+| `RuleValues` | Static: `Null`, `True`, `False`, `Bool(bool)`, `Strings(IEnumerable<string>)`, `TypeName(Value)`, `AreEqual(Value, Value)`, `TryCompare(Value, Value, out int)`. |
 | `RuleSet` | Immutable record: `IReadOnlyList<MatchBlock> Matches`. `static Merge(IEnumerable<RuleSet>)`. |
 | `MatchBlock` | `(string Path, IReadOnlyList<AllowRule> Allow, IReadOnlyList<MatchBlock> Matches)` |
 | `AllowRule` | `(IReadOnlyList<RuleOperation> Operations, RuleExpression Condition)` |
 | `RuleOperation` | Enum: `Get`, `List`, `Create`, `Update`, `Delete`. |
 | `RuleOperations` | Static sets: `Read`, `Write`, `All`, `Of(params RuleOperation[])`. |
 | `RuleSetValidation` | `static Validate(RuleSet)` → `IReadOnlyList<RuleValidationIssue>` `(string? Path, string Message)`; empty when valid. |
-| `RuleEngine` | `RuleEngine(IRuleSetRepository, IRuleValueComparer)`. `Task<bool> AllowsAsync(RuleOperation, string path, RuleRequest, CancellationToken)`; `bool Allows(QueryConstraints, RuleRequest)`. Reads the ruleset from the repository per call. |
+| `RuleEngine` | `RuleEngine(IRuleSetRepository)`. `Task<bool> AllowsAsync(RuleOperation, string path, RuleRequest, CancellationToken)`; `bool Allows(QueryConstraints, RuleRequest)`. Reads the ruleset from the repository per call. |
 | `IRuleSetRepository` | Read side of the ruleset seam: `RuleSet Current { get; }`. |
 | `IMutableRuleSetRepository` | Write side: `IRuleSetRepository` + `void Update(RuleSet)`. |
 | `MutableRuleSetRepository` | Hot-swappable `IMutableRuleSetRepository`: `MutableRuleSetRepository(RuleSet?)`, lock-free atomic swap. |
 | `StaticRuleSetRepository` | Immutable `IRuleSetRepository`: `StaticRuleSetRepository(RuleSet)` — a frozen engine. |
 | `RuleSetEvaluator` | Low-level: `static Task<bool> AllowsAsync(RuleSet, RuleOperation, string path, RuleContext, CancellationToken)`. |
 
+### `Winche.Values` (Winche.Core)
+
+The value types rules evaluate on: `Value` and its records `NullValue`, `BooleanValue`, `IntegerValue`, `DoubleValue`, `StringValue`, `BytesValue`, `TimestampValue`, `ReferenceValue`, `GeoPointValue`, `ArrayValue`, `MapValue`; `Value.FromObject(object?)`, `ValueComparer.Instance`, `PlainJson.Of(value)`. See Winche.Core.
+
 ### `Winche.Rules.Expressions`
 
 | Type | Role |
 | - | - |
 | `RuleExpression` | Abstract base record for all expression nodes. |
-| `LiteralExpression` | `(RuleValue Value)` |
+| `LiteralExpression` | `(Value Value)` |
 | `VarExpression` | `(string Name)` |
 | `MemberExpression` | `(RuleExpression Target, string Name)` |
 | `IndexExpression` | `(RuleExpression Target, RuleExpression Index)` |
@@ -747,10 +739,8 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 | `RuleEngine` *(in `Winche.Rules`)* | High-level engine; see above. |
 | `RuleRequest` | Per-request inputs: `Resource`, `Request`, `Params`, `Provider`. |
 | `RuleEvaluator` | `static Task<bool> EvaluateAsync(RuleExpression, RuleContext, CancellationToken)`. |
-| `RuleContext` | `Resource`, `Request`, `Params`, `Provider`, `Comparer`. `static NoParams`. |
-| `IRuleResourceProvider` | `Task<bool> ExistsAsync(string, CancellationToken)` + `Task<RuleValue> GetAsync(string, CancellationToken)`. |
-| `IRuleValueComparer` | `bool AreEqual(RuleValue, RuleValue)` + `bool TryCompare(RuleValue, RuleValue, out int)`. |
-| `DefaultRuleValueComparer` | Built-in comparer (`.Instance`); the default when none is supplied. |
+| `RuleContext` | `Resource`, `Request` (`Value`), `Params` (`IReadOnlyDictionary<string, Value>`), `Provider`. `static NoParams`. |
+| `IRuleResourceProvider` | `Task<bool> ExistsAsync(string, CancellationToken)` + `Task<Value> GetAsync(string, CancellationToken)`. |
 | `RuleEvaluationException` | Thrown internally on evaluation errors; caught by the evaluator which returns `false`. |
 
 ### `Winche.Rules.Querying`
@@ -759,26 +749,28 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 | - | - |
 | `QueryAnalyzer` | `static bool Allows(RuleSet, QueryConstraints, RuleContext)`. |
 | `QueryConstraints` | `(string Collection, IReadOnlyList<QueryConstraint> Constraints)`. |
-| `QueryConstraint` | `(IReadOnlyList<string> Field, ComparisonOperator Operator, RuleValue Value)`. |
+| `QueryConstraint` | `(IReadOnlyList<string> Field, ComparisonOperator Operator, Value Value)`. |
 
 ### `Winche.Rules.Json`
 
 | Type | Role |
 | - | - |
 | `RuleJson` | `Serialize(RuleExpression)`, `DeserializeExpr(string)`, `Serialize(RuleSet)`, `DeserializeRuleSet(string)`. `static JsonSerializerOptions Options`. |
-| `RuleValueJsonConverter` | `System.Text.Json` converter for `RuleValue`; applied automatically via `[JsonConverter]`. |
+| `RuleLiteralJsonConverter` | `System.Text.Json` converter for rule literals (`{"$integer":"5"}`, `{"$latlng":[lat,lng]}`, …); applied on `LiteralExpression.Value` and in `RuleJson.Options`. |
 
 ### `Winche.Rules.DependencyInjection`
 
 | Type | Role |
 | - | - |
 | `ServiceCollectionExtensions` | `AddWincheRules(this IServiceCollection, Action<WincheRulesOptions>)` — one non-keyed singleton `RuleEngine`. `AddWincheRules(this IServiceCollection, object serviceKey, Action<WincheRulesOptions>)` — one isolated keyed engine per type. |
-| `WincheRulesOptions` | Fluent: `WithMutableRuleSetRepository(RuleSet?)`, `WithStaticRuleSetRepository(RuleSet)`, `WithRuleSetRepository(IRuleSetRepository)`, `WithRuleValueComparer(IRuleValueComparer)`. |
+| `WincheRulesOptions` | Fluent: `WithMutableRuleSetRepository(RuleSet?)`, `WithStaticRuleSetRepository(RuleSet)`, `WithRuleSetRepository(IRuleSetRepository)`. |
 
 ---
 
 ## Requirements and license
 
 **Target framework:** .NET 10 (`net10.0`)
+
+**Dependencies:** Winche.Core (path patterns, values) and `Microsoft.Extensions.DependencyInjection.Abstractions`.
 
 **License:** [Elastic License 2.0](https://www.elastic.co/licensing/elastic-license) — see `LICENSE`.

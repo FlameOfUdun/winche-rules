@@ -10,26 +10,9 @@ namespace Winche.Rules.DependencyInjection;
 public sealed record WincheRulesOptions
 {
     /// <summary>
-    /// Gets the <see cref="IRuleValueComparer"/> to use for rule evaluation.
-    /// </summary>
-    internal IRuleValueComparer? Comparer { get; private set; }
-
-    /// <summary>
     /// Gets the <see cref="IRuleSetRepository"/> to back the engine with, if any.
     /// </summary>
     internal IRuleSetRepository? Repository { get; private set; }
-
-    /// <summary>
-    /// Sets the <see cref="IRuleValueComparer"/> to use for rule evaluation.
-    /// </summary>
-    /// <param name="value">The comparer to use for rule evaluation.</param>
-    /// <returns>The current <see cref="WincheRulesOptions"/> instance.</returns>
-    public WincheRulesOptions WithRuleValueComparer(IRuleValueComparer value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        Comparer = value;
-        return this;
-    }
 
     /// <summary>
     /// Backs the engine with a custom <see cref="IRuleSetRepository"/> (for example, one that self-refreshes
@@ -72,38 +55,33 @@ public sealed record WincheRulesOptions
 
     /// <summary>
     /// Non-keyed registration: registers the configured repository (defaulting to an empty
-    /// <see cref="MutableRuleSetRepository"/>), its comparer, and a single <see cref="RuleEngine"/> over them.
+    /// <see cref="MutableRuleSetRepository"/>) and a single <see cref="RuleEngine"/> over them.
     /// If the repository is mutable, its <see cref="IMutableRuleSetRepository"/> write side is registered too.
     /// </summary>
     internal void Configure(IServiceCollection services)
     {
         var repository = Repository ?? new MutableRuleSetRepository();
-        var comparer = Comparer ?? new DefaultRuleValueComparer();
 
         services.AddSingleton(repository);
         if (repository is IMutableRuleSetRepository mutable)
             services.AddSingleton(mutable);
-        services.AddSingleton(comparer);
         services.TryAddSingleton<RuleEngine>();
     }
 
     /// <summary>
-    /// Keyed registration: registers one isolated <c>(repository, comparer, engine)</c> unit under
-    /// <paramref name="serviceKey"/> — its own ruleset and its own comparer. Keys are never merged. The engine
+    /// Keyed registration: registers one isolated <c>(repository, engine)</c> unit under
+    /// <paramref name="serviceKey"/> — its own ruleset. Keys are never merged. The engine
     /// is built by a keyed factory so it resolves this key's dependencies; a mutable repository also exposes
     /// its <see cref="IMutableRuleSetRepository"/> write side under the key for hot-swapping.
     /// </summary>
     internal void ConfigureKeyed(IServiceCollection services, object serviceKey)
     {
         var repository = Repository ?? new MutableRuleSetRepository();
-        var comparer = Comparer ?? new DefaultRuleValueComparer();
 
         services.AddKeyedSingleton<IRuleSetRepository>(serviceKey, (_, _) => repository);
         if (repository is IMutableRuleSetRepository mutable)
             services.AddKeyedSingleton<IMutableRuleSetRepository>(serviceKey, (_, _) => mutable);
-        services.AddKeyedSingleton<IRuleValueComparer>(serviceKey, (_, _) => comparer);
         services.AddKeyedSingleton<RuleEngine>(serviceKey, (sp, key) =>
-            new RuleEngine(sp.GetRequiredKeyedService<IRuleSetRepository>(key),
-                           sp.GetRequiredKeyedService<IRuleValueComparer>(key)));
+            new RuleEngine(sp.GetRequiredKeyedService<IRuleSetRepository>(key)));
     }
 }

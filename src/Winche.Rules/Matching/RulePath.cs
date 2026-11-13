@@ -24,7 +24,7 @@ internal static class RulePath
     /// (<c>{path=**}/posts/{postId}</c>) matches zero or more. A pattern with more than one recursive wildcard matches
     /// nothing (they're rejected when rules are built).
     /// </summary>
-    public static bool TryMatch(IReadOnlyList<PathSegment> pattern, string path, out Dictionary<string, RuleValue> captures)
+    public static bool TryMatch(IReadOnlyList<PathSegment> pattern, string path, out Dictionary<string, Value> captures)
     {
         captures = [];
         if (!Winche.PathPattern.Of(pattern).TryMatch(path, out var raw)) return false;
@@ -35,7 +35,7 @@ internal static class RulePath
     /// <summary>The number of recursive wildcards in a (possibly flattened) pattern.</summary>
     internal static int RecursiveCount(IReadOnlyList<PathSegment> pattern) => pattern.Count(s => s is RecursiveSegment);
 
-    internal static bool TryMatchPrefix(IReadOnlyList<PathSegment> prefix, string path, out Dictionary<string, RuleValue> captures)
+    internal static bool TryMatchPrefix(IReadOnlyList<PathSegment> prefix, string path, out Dictionary<string, Value> captures)
     {
         captures = [];
         if (!Winche.PathPattern.Of(prefix).TryMatchPrefix(path, out var raw)) return false;
@@ -43,9 +43,9 @@ internal static class RulePath
         return true;
     }
 
-    private static Dictionary<string, RuleValue> Values(IReadOnlyList<PathSegment> pattern, Dictionary<string, string> raw)
+    private static Dictionary<string, Value> Values(IReadOnlyList<PathSegment> pattern, Dictionary<string, string> raw)
     {
         var recursive = pattern.OfType<RecursiveSegment>().Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
-        return raw.ToDictionary(kv => kv.Key, kv => recursive.Contains(kv.Key) ? RuleValue.Path(kv.Value) : RuleValue.String(kv.Value));
+        return raw.ToDictionary(kv => kv.Key, kv => recursive.Contains(kv.Key) ? (Value)new ReferenceValue(kv.Value) : new StringValue(kv.Value));
     }
 }

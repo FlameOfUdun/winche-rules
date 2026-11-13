@@ -1,3 +1,4 @@
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
@@ -28,8 +29,8 @@ public class RecursiveWildcardTests
         Assert.Equal(matches, ok);
         if (!matches) return;
         var name = pattern.Contains("{path=**}") ? "path" : "rest";
-        Assert.Equal(captured, captures[name].AsPath);
-        if (pattern.Contains("{id}")) Assert.Equal(path.Split('/')[^1], captures["id"].AsString);
+        Assert.Equal(captured, ((ReferenceValue)captures[name]).Path);
+        if (pattern.Contains("{id}")) Assert.Equal(path.Split('/')[^1], ((StringValue)captures["id"]).Value);
     }
 
     [Fact]
@@ -47,8 +48,8 @@ public class RecursiveWildcardTests
     public async Task Single_document_operations_use_it()
     {
         var engine = new RuleEngine(new StaticRuleSetRepository(RuleText.ParseRuleSet(
-            "match {path=**}/posts/{id} {\n  allow get: if id in ['p1', 'top'];\n}")), new DefaultRuleValueComparer());
-        var req = new RuleRequest { Request = RuleValue.Map(new Dictionary<string, RuleValue>()) };
+            "match {path=**}/posts/{id} {\n  allow get: if id in ['p1', 'top'];\n}")));
+        var req = new RuleRequest { Request = new MapValue(new Dictionary<string, Value>()) };
         Assert.True(await engine.AllowsAsync(RuleOperation.Get, "users/u1/posts/p1", req));
         Assert.True(await engine.AllowsAsync(RuleOperation.Get, "posts/top", req));
         Assert.False(await engine.AllowsAsync(RuleOperation.Get, "posts/other", req));
@@ -59,14 +60,14 @@ public class RecursiveWildcardTests
 
     private static RuleContext Ctx(string uid) => new()
     {
-        Request = RuleValue.Map(new Dictionary<string, RuleValue>
+        Request = new MapValue(new Dictionary<string, Value>
         {
-            ["auth"] = RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String(uid) }),
+            ["auth"] = new MapValue(new Dictionary<string, Value> { ["uid"] = new StringValue(uid) }),
         }),
     };
 
     private static QueryConstraints Group(string id, params QueryConstraint[] c) => new(id, c, CollectionGroup: true);
-    private static QueryConstraint Eq(string field, string value) => new([field], ComparisonOperator.Eq, RuleValue.String(value));
+    private static QueryConstraint Eq(string field, string value) => new([field], ComparisonOperator.Eq, new StringValue(value));
 
     [Fact]
     public void A_group_query_needs_a_rule_covering_every_parent()
