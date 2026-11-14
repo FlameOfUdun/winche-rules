@@ -23,7 +23,7 @@ public static class RuleFunctions
 {
     /// <summary>The type names <c>is</c> accepts.</summary>
     public static readonly IReadOnlyList<string> TypeNames =
-        ["string", "int", "float", "number", "bool", "null", "map", "list", "timestamp", "bytes", "path", "latlng"];
+        ["string", "int", "float", "number", "bool", "null", "map", "list", "timestamp", "bytes", "path", "fileRef", "userRef", "latlng"];
 
     /// <summary>The pure function names, plus the source-backed <c>exists</c> and <c>get(path)</c>.</summary>
     public static readonly IReadOnlyList<string> Names =

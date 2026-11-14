@@ -61,6 +61,8 @@ public sealed class RuleLiteralJsonConverter : JsonConverter<Value>
                 "$timestamp" => new TimestampValue(DateTimeOffset.Parse(reader.GetString()!, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)),
                 "$bytes" => new BytesValue(Convert.FromBase64String(reader.GetString()!)),
                 "$path" => new ReferenceValue(reader.GetString()!),
+                "$fileRef" => new FileRefValue(reader.GetString()!),
+                "$userRef" => new UserRefValue(reader.GetString()!),
                 "$latlng" => ReadLatLng(ref reader),
                 _ => throw new JsonException($"Unknown rule value tag '{first}'."),
             };
@@ -106,6 +108,8 @@ public sealed class RuleLiteralJsonConverter : JsonConverter<Value>
             case TimestampValue t: Tagged(writer, "$timestamp", t.Value.ToString("O", CultureInfo.InvariantCulture)); break;
             case BytesValue b: Tagged(writer, "$bytes", Convert.ToBase64String(b.Value)); break;
             case ReferenceValue r: Tagged(writer, "$path", r.Path); break;
+            case FileRefValue f: Tagged(writer, "$fileRef", f.Path); break;
+            case UserRefValue u: Tagged(writer, "$userRef", u.Uid); break;
             case GeoPointValue g:
                 writer.WriteStartObject();
                 writer.WriteStartArray("$latlng");

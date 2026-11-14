@@ -23,7 +23,8 @@ public static class RuleValues
 
     /// <summary>
     /// The rules-language name of <paramref name="v"/>'s type: <c>string</c>, <c>int</c>, <c>float</c>, <c>bool</c>,
-    /// <c>null</c>, <c>map</c>, <c>list</c>, <c>timestamp</c>, <c>bytes</c>, <c>path</c> or <c>latlng</c>.
+    /// <c>null</c>, <c>map</c>, <c>list</c>, <c>timestamp</c>, <c>bytes</c>, <c>path</c> (a document reference),
+    /// <c>fileRef</c>, <c>userRef</c> or <c>latlng</c>.
     /// </summary>
     public static string TypeName(Value v) => v switch
     {
@@ -35,14 +36,27 @@ public static class RuleValues
         BytesValue => "bytes",
         TimestampValue => "timestamp",
         ReferenceValue => "path",
+        FileRefValue => "fileRef",
+        UserRefValue => "userRef",
         GeoPointValue => "latlng",
         ArrayValue => "list",
         MapValue => "map",
         _ => v.GetType().Name,
     };
 
-    /// <summary>Whether two values are equal: same type (integers and floats are both numbers) and same value.</summary>
-    public static bool AreEqual(Value a, Value b) => a.Rank == b.Rank && ValueComparer.Instance.Compare(a, b) == 0;
+    /// <summary>
+    /// Whether two values are equal: same type (integers and floats are both numbers) and same value. A file or user
+    /// reference also equals its path or uid as a string, so <c>resource.data.owner == request.auth.uid</c> holds
+    /// whether <c>owner</c> is stored as a user reference or a string.
+    /// </summary>
+    public static bool AreEqual(Value a, Value b) => (a, b) switch
+    {
+        (UserRefValue u, StringValue s) => u.Uid == s.Value,
+        (StringValue s, UserRefValue u) => u.Uid == s.Value,
+        (FileRefValue f, StringValue s) => f.Path == s.Value,
+        (StringValue s, FileRefValue f) => f.Path == s.Value,
+        _ => a.Rank == b.Rank && ValueComparer.Instance.Compare(a, b) == 0,
+    };
 
     /// <summary>
     /// Orders two values of the same type (numbers together) the way the database orders them; false for values of
