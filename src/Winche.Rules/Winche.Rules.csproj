@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <PackageId>Winche.Rules</PackageId>
-    <Description>A declarative, JSON-serializable authorization rules engine. Write document access rules in a Firestore-style rules language (or load them as JSON), evaluate them in memory, and analyze queries against them. Backend-agnostic via small adapter ports.</Description>
+    <Description>A declarative, JSON-serializable authorization rules engine. Write document access rules in a small rules language (or load them as JSON), evaluate them in memory, and analyze queries against them. Backend-agnostic via small adapter ports.</Description>
     <PackageTags>authorization;rules;access-control;security-rules;dotnet</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsPackable>true</IsPackable>
@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Winche.Core" Version="1.0.0" />
   </ItemGroup>
 
 </Project>

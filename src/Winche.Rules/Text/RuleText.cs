@@ -25,17 +25,22 @@ public sealed class RuleSyntaxException(string message, int offset, int line, in
 /// The text form of rule conditions, close to Firestore's rules language:
 /// <code>
 /// request.auth.token.sub == userId
-///   &amp;&amp; request.resource.data.keys().hasOnly(['name', 'email'])
+///   &amp;&amp; request.resource.data has only ['name', 'email']
 ///   &amp;&amp; request.resource.data.name is string
-///   &amp;&amp; !('role' in request.resource.data.diff(resource.data).affectedKeys())
+///   &amp;&amp; 'role' not in request.resource.data
+///   &amp;&amp; changes only ['name']
 /// </code>
 /// <para>Operators, loosest first: <c>c ? a : b</c>, <c>||</c>, <c>&amp;&amp;</c>, then the comparisons
-/// <c>== != &lt; &lt;= &gt; &gt;=</c>, <c>in</c> and <c>x is type</c>, then <c>!</c>, then <c>.field</c>,
+/// <c>== != &lt; &lt;= &gt; &gt;=</c>, <c>in</c>, <c>not in</c>, <c>x is type</c>, <c>map has only|all|any [...]</c>
+/// and <c>changes only|all|any [...]</c>, then <c>!</c>, then <c>.field</c>,
 /// <c>[index]</c> and method calls. <c>x.f(a)</c> is the function <c>f(x, a)</c>, so both spellings work.
 /// Literals: numbers, <c>'strings'</c> or <c>"strings"</c>, <c>true</c>, <c>false</c>, <c>null</c>, lists
 /// <c>[...]</c> and maps <c>{'k': v}</c> of literals, and <c>timestamp('ISO-8601')</c>, <c>path('a/b')</c>,
 /// <c>bytes('base64')</c>, <c>float('1e3')</c> (finite only: rules are stored as JSON). A field name that isn't an identifier is written in backticks.</para>
-/// <para><see cref="Format"/> and <see cref="Parse"/> round-trip: parsing formatted text gives back the same
+/// <para>The readable forms are shorthand: <c>x not in y</c> is <c>!(x in y)</c>, <c>m has only [...]</c> is
+/// <c>m.keys().hasOnly([...])</c> (likewise <c>all</c> → <c>hasAll</c>, <c>any</c> → <c>hasAny</c>), and <c>changes only [...]</c> is
+/// <c>request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])</c>. They parse to the same expression.</para>
+/// <para><see cref="Format(RuleExpression)"/> and <see cref="Parse"/> round-trip: parsing formatted text gives back the same
 /// expression, up to flattening nested <c>&amp;&amp;</c>/<c>||</c> and writing empty ones as <c>true</c>/<c>false</c>.</para>
 /// </summary>
 public static partial class RuleText
@@ -52,45 +57,98 @@ public static partial class RuleText
     /// <summary>Parses a condition. Throws <see cref="RuleSyntaxException"/> with the position of the first problem.</summary>
     public static RuleExpression Parse(string text) => new Parser(text).ParseAll();
 
-    /// <summary>Writes a condition as text.</summary>
-    public static string Format(RuleExpression expression) => Write(expression, 0);
+    /// <summary>
+    /// Writes a condition as text, using the readable forms where they apply (<c>x not in y</c>,
+    /// <c>map has only [...]</c>, <c>changes only [...]</c>).
+    /// </summary>
+    public static string Format(RuleExpression expression) => Format(expression, readable: true);
+
+    /// <summary>
+    /// Writes a condition as text; <paramref name="readable"/> false writes the method chains instead
+    /// (<c>!(x in y)</c>, <c>map.keys().hasOnly([...])</c>, <c>request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])</c>).
+    /// Both read back as the same expression.
+    /// </summary>
+    public static string Format(RuleExpression expression, bool readable) => new Writer(readable).Write(expression, 0);
+
+    /// <summary><c>request.resource.data.diff(resource.data).affectedKeys()</c> — what <c>changes</c> stands for.</summary>
+    private static CallExpression ChangedKeys() =>
+        new("affectedKeys", [new CallExpression("diff",
+        [
+            new MemberExpression(new MemberExpression(new VarExpression("request"), "resource"), "data"),
+            new MemberExpression(new VarExpression("resource"), "data"),
+        ])]);
+
+    private static readonly CallExpression ChangedKeysShape = ChangedKeys();
+
+    private static string? SetWord(string function) => function switch
+    {
+        "hasOnly" => "only",
+        "hasAll" => "all",
+        "hasAny" => "any",
+        _ => null,
+    };
 
     // ── formatting ──────────────────────────────────────────────────────────
 
-    // Precedence: 1 ternary, 2 or, 3 and, 4 comparison / in / is, 5 unary, 6 postfix, 7 primary.
-    private static string Write(RuleExpression e, int min)
+    /// <summary>Writes expressions as text; <c>readable</c> picks the sugar forms over method chains.</summary>
+    private sealed class Writer(bool readable)
     {
-        var (text, prec) = e switch
+        // Precedence: 1 ternary, 2 or, 3 and, 4 comparison / in / is, 5 + -, 6 * / %, 7 unary, 8 postfix, 9 primary.
+        public string Write(RuleExpression e, int min)
         {
-            LiteralExpression l => (Literal(l.Value), l.Value.IsNumber && l.Value.AsNumber < 0 ? 5 : 7),
-            VarExpression v => (Name(v.Name), 7),
-            MemberExpression m => ($"{Write(m.Target, 6)}.{Name(m.Name)}", 6),
-            IndexExpression ix => ($"{Write(ix.Target, 6)}[{Write(ix.Index, 0)}]", 6),
-            CompareExpression c => ($"{Write(c.Left, 5)} {Op(c.Op)} {Write(c.Right, 5)}", 4),
-            InExpression i => ($"{Write(i.Item, 5)} in {Write(i.Collection, 5)}", 4),
-            NotExpression n => ($"!{Write(n.Operand, 5)}", 5),
-            AndExpression { Operands.Count: 0 } => ("true", 7),
-            OrExpression { Operands.Count: 0 } => ("false", 7),
-            AndExpression { Operands.Count: 1 } a => (Write(a.Operands[0], min), 7),
-            OrExpression { Operands.Count: 1 } o => (Write(o.Operands[0], min), 7),
-            AndExpression a => (string.Join(" && ", a.Operands.Select(x => Write(x, 4))), 3),
-            OrExpression o => (string.Join(" || ", o.Operands.Select(x => Write(x, 3))), 2),
-            ConditionalExpression c => ($"{Write(c.Condition, 2)} ? {Write(c.Then, 0)} : {Write(c.Else, 0)}", 1),
-            CallExpression call => Call(call),
-            _ => throw new ArgumentException($"Cannot write a {e.GetType().Name} as text."),
-        };
-        return prec < min ? $"({text})" : text;
-    }
+            var (text, prec) = e switch
+            {
+                // Precedence 7 (unary), not 9: '.' is a path character, so `/a/b.c` would read back as one path — a path
+            // literal is bracketed before `.field`, `[i]` and `.method()`: `(/a/b).c`.
+            LiteralExpression { Value: ReferenceValue { Path: var lp } } when readable && IsPlainPath(lp) => ("/" + lp, 7),
+            LiteralExpression l => (Literal(l.Value), l.Value is IntegerValue { Value: < 0 } or DoubleValue { Value: < 0 } ? 7 : 9),
+                VarExpression v => (Name(v.Name), 9),
+                MemberExpression m => ($"{Write(m.Target, 8)}.{Name(m.Name)}", 8),
+                IndexExpression ix => ($"{Write(ix.Target, 8)}[{Write(ix.Index, 0)}]", 8),
+                CompareExpression c => ($"{Write(c.Left, 5)} {Op(c.Op)} {Write(c.Right, 5)}", 4),
+                InExpression i => ($"{Write(i.Item, 5)} in {Write(i.Collection, 5)}", 4),
+                NotExpression { Operand: InExpression i } when readable => ($"{Write(i.Item, 5)} not in {Write(i.Collection, 5)}", 4),
+                NotExpression n => ($"!{Write(n.Operand, 7)}", 7),
+                AndExpression { Operands.Count: 0 } => ("true", 9),
+                OrExpression { Operands.Count: 0 } => ("false", 9),
+                AndExpression { Operands.Count: 1 } a => (Write(a.Operands[0], min), 9),
+                OrExpression { Operands.Count: 1 } o => (Write(o.Operands[0], min), 9),
+                AndExpression a => (string.Join(" && ", a.Operands.Select(x => Write(x, 4))), 3),
+                OrExpression o => (string.Join(" || ", o.Operands.Select(x => Write(x, 3))), 2),
+                ConditionalExpression c => ($"{Write(c.Condition, 2)} ? {Write(c.Then, 0)} : {Write(c.Else, 0)}", 1),
+                CallExpression call => Call(call),
+                _ => throw new ArgumentException($"Cannot write a {e.GetType().Name} as text."),
+            };
+            return prec < min ? $"({text})" : text;
+        }
 
-    private static (string, int) Call(CallExpression call)
-    {
-        var args = call.Args;
-        if (call.Name == "is" && args.Count == 2 && args[1] is LiteralExpression { Value.Kind: RuleValueKind.String } t
-            && Evaluation.RuleFunctions.TypeNames.Contains(t.Value.AsString))
-            return ($"{Write(args[0], 5)} is {t.Value.AsString}", 4);
-        if (args.Count >= 1 && (Methods.Contains(call.Name) || (call.Name == "get" && args.Count == 3)))
-            return ($"{Write(args[0], 6)}.{Name(call.Name)}({string.Join(", ", args.Skip(1).Select(a => Write(a, 0)))})", 6);
-        return ($"{Name(call.Name)}({string.Join(", ", args.Select(a => Write(a, 0)))})", 7);
+        private static (string Op, int Prec)? Arithmetic(string name) => name switch
+        {
+            "_add" => ("+", 5), "_sub" => ("-", 5), "_mul" => ("*", 6), "_div" => ("/", 6), "_mod" => ("%", 6), _ => null,
+        };
+
+        private (string, int) Call(CallExpression call)
+        {
+            var args = call.Args;
+            if (args.Count == 2 && Arithmetic(call.Name) is { } arith)
+                return ($"{Write(args[0], arith.Prec)} {arith.Op} {Write(args[1], arith.Prec + 1)}", arith.Prec);
+            if (readable && call.Name == "path" && args.Count > 0
+                && args.All(a => a is not LiteralExpression || (a is LiteralExpression { Value: StringValue { Value: var ls } } && IsPlainPath(ls) && !ls.Contains('/'))))
+                return (string.Concat(args.Select(a => a is LiteralExpression { Value: StringValue { Value: var ls } } ? "/" + ls : $"/$({Write(a, 0)})")), 7);
+            if (readable && args.Count == 2 && SetWord(call.Name) is { } word)
+            {
+                if (args[0].Equals(ChangedKeysShape))
+                    return ($"changes {word} {Write(args[1], 5)}", 4);
+                if (args[0] is CallExpression { Name: "keys", Args.Count: 1 } keys)
+                    return ($"{Write(keys.Args[0], 5)} has {word} {Write(args[1], 5)}", 4);
+            }
+            if (call.Name == "is" && args.Count == 2 && args[1] is LiteralExpression { Value: StringValue { Value: var type } }
+                && Evaluation.RuleFunctions.TypeNames.Contains(type))
+                return ($"{Write(args[0], 5)} is {type}", 4);
+            if (args.Count >= 1 && (Methods.Contains(call.Name) || (call.Name == "get" && args.Count == 3)))
+                return ($"{Write(args[0], 8)}.{Name(call.Name)}({string.Join(", ", args.Skip(1).Select(a => Write(a, 0)))})", 8);
+            return ($"{Name(call.Name)}({string.Join(", ", args.Select(a => Write(a, 0)))})", 9);
+        }
     }
 
     private static string Op(ComparisonOperator op) => op switch
@@ -100,25 +158,29 @@ public static partial class RuleText
         _ => throw new ArgumentOutOfRangeException(nameof(op)),
     };
 
+    /// <summary>A path that can be written as a literal <c>/a/b</c>: non-empty segments of path characters.</summary>
+    private static bool IsPlainPath(string path) =>
+        path.Length > 0 && path.Split('/').All(seg => seg.Length > 0 && seg.All(IsPathChar));
+
     private static bool IsIdentifier(string s) =>
         s.Length > 0 && (char.IsAsciiLetter(s[0]) || s[0] == '_') && s.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')
         && !Keywords.Contains(s);
 
     private static string Name(string s) => IsIdentifier(s) ? s : $"`{s.Replace("`", "``")}`";
 
-    private static string Literal(RuleValue v) => v.Kind switch
+    private static string Literal(Value v) => v switch
     {
-        RuleValueKind.Null => "null",
-        RuleValueKind.Bool => v.AsBool ? "true" : "false",
-        RuleValueKind.Int => v.AsInt.ToString(CultureInfo.InvariantCulture),
-        RuleValueKind.Double => Double(v.AsDouble),
-        RuleValueKind.String => Quote(v.AsString),
-        RuleValueKind.Timestamp => $"timestamp({Quote(v.AsTimestamp.ToString("O", CultureInfo.InvariantCulture))})",
-        RuleValueKind.Path => $"path({Quote(v.AsPath)})",
-        RuleValueKind.Bytes => $"bytes({Quote(Convert.ToBase64String(v.AsBytes))})",
-        RuleValueKind.List => $"[{string.Join(", ", v.AsList.Select(Literal))}]",
-        RuleValueKind.Map => $"{{{string.Join(", ", v.AsMap.Select(kv => $"{Quote(kv.Key)}: {Literal(kv.Value)}"))}}}",
-        _ => throw new ArgumentOutOfRangeException(nameof(v)),
+        NullValue => "null",
+        BooleanValue b => b.Value ? "true" : "false",
+        IntegerValue i => i.Value.ToString(CultureInfo.InvariantCulture),
+        DoubleValue d => Double(d.Value),
+        StringValue s => Quote(s.Value),
+        TimestampValue t => $"timestamp({Quote(t.Value.ToString("O", CultureInfo.InvariantCulture))})",
+        ReferenceValue r => $"path({Quote(r.Path)})",
+        BytesValue b => $"bytes({Quote(Convert.ToBase64String(b.Value))})",
+        ArrayValue a => $"[{string.Join(", ", a.Values.Select(Literal))}]",
+        MapValue m => $"{{{string.Join(", ", m.Fields.Select(kv => $"{Quote(kv.Key)}: {Literal(kv.Value)}"))}}}",
+        _ => throw new ArgumentOutOfRangeException(nameof(v), $"The rules language has no literal for a {RuleValues.TypeName(v)}."),
     };
 
     private static string Double(double d)
@@ -152,7 +214,10 @@ public static partial class RuleText
 
     // ── parsing ────────────────────────────────────────────────────────────
 
-    private enum T { Ident, Number, String, Op, End }
+    private enum T { Ident, Number, String, Op, Path, End }
+
+    /// <summary>Characters of a literal path segment (<c>/users/u-1.a</c>).</summary>
+    private static bool IsPathChar(char c) => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.' or '~' or '@' or '%' or '+';
 
     private readonly record struct Token(T Kind, string Text, int Offset, bool Quoted = false)
     {
@@ -222,7 +287,30 @@ public static partial class RuleText
 
         private RuleExpression Relation()
         {
-            var left = Unary();
+            // `changes only|all|any [...]`: the fields an update changes (sugar for
+            // request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])).
+            if (IsWord("changes") && IsSetWord(1))
+            {
+                Next();
+                var fn = SetFunction(Next());
+                return new CallExpression(fn, [ChangedKeys(), Additive()]);
+            }
+
+            var left = Additive();
+            // `x not in y` (sugar for !(x in y)).
+            if (IsWord("not") && _i + 1 < _tokens.Count && _tokens[_i + 1].IsWord("in"))
+            {
+                Next();
+                Next();
+                return new NotExpression(new InExpression(left, Additive()));
+            }
+            // `map has only|all|any [...]`: the map's keys (sugar for map.keys().hasOnly([...])).
+            if (IsWord("has") && IsSetWord(1))
+            {
+                Next();
+                var fn = SetFunction(Next());
+                return new CallExpression(fn, [new CallExpression("keys", [left]), Additive()]);
+            }
             if (Peek.Kind == T.Op && Peek.Text is "==" or "!=" or "<" or "<=" or ">" or ">=")
             {
                 var op = Next().Text switch
@@ -230,12 +318,12 @@ public static partial class RuleText
                     "==" => ComparisonOperator.Eq, "!=" => ComparisonOperator.Ne, "<" => ComparisonOperator.Lt,
                     "<=" => ComparisonOperator.Le, ">" => ComparisonOperator.Gt, _ => ComparisonOperator.Ge,
                 };
-                return new CompareExpression(left, op, Unary());
+                return new CompareExpression(left, op, Additive());
             }
             if (IsWord("in"))
             {
                 Next();
-                return new InExpression(left, Unary());
+                return new InExpression(left, Additive());
             }
             if (IsWord("is"))
             {
@@ -244,9 +332,37 @@ public static partial class RuleText
                 if (type.Kind != T.Ident || type.Quoted || !Evaluation.RuleFunctions.TypeNames.Contains(type.Text))
                     throw Error($"Expected a type after 'is' ({string.Join(", ", Evaluation.RuleFunctions.TypeNames)})", type);
                 Next();
-                return new CallExpression("is", [left, new LiteralExpression(RuleValue.String(type.Text))]);
+                return new CallExpression("is", [left, new LiteralExpression(new StringValue(type.Text))]);
             }
             return left;
+        }
+
+        /// <summary>Whether the token <paramref name="ahead"/> places on is an unquoted <c>only</c>, <c>all</c> or <c>any</c>.</summary>
+        private bool IsSetWord(int ahead) =>
+            _i + ahead < _tokens.Count && _tokens[_i + ahead] is { Kind: T.Ident, Quoted: false, Text: "only" or "all" or "any" };
+
+        private static string SetFunction(Token word) => word.Text switch
+        {
+            "only" => "hasOnly",
+            "all" => "hasAll",
+            _ => "hasAny",
+        };
+
+        /// <summary>Arithmetic, as built-in calls (<c>_add</c>, <c>_sub</c>, <c>_mul</c>, <c>_div</c>, <c>_mod</c>): <c>a + b * c</c>.</summary>
+        private RuleExpression Additive()
+        {
+            var e = Multiplicative();
+            while (IsOp("+") || IsOp("-"))
+                e = new CallExpression(Next().Text == "+" ? "_add" : "_sub", [e, Multiplicative()]);
+            return e;
+        }
+
+        private RuleExpression Multiplicative()
+        {
+            var e = Unary();
+            while (IsOp("*") || IsOp("/") || IsOp("%"))
+                e = new CallExpression(Next().Text switch { "*" => "_mul", "/" => "_div", _ => "_mod" }, [e, Unary()]);
+            return e;
         }
 
         private RuleExpression Unary()
@@ -308,16 +424,16 @@ public static partial class RuleText
                     return new LiteralExpression(Number(t, negative: false));
                 case T.String:
                     Next();
-                    return new LiteralExpression(RuleValue.String(t.Text));
+                    return new LiteralExpression(new StringValue(t.Text));
                 case T.Ident when t.IsWord("true"):
                     Next();
-                    return new LiteralExpression(RuleValue.Bool(true));
+                    return new LiteralExpression(RuleValues.True);
                 case T.Ident when t.IsWord("false"):
                     Next();
-                    return new LiteralExpression(RuleValue.Bool(false));
+                    return new LiteralExpression(RuleValues.False);
                 case T.Ident when t.IsWord("null"):
                     Next();
-                    return new LiteralExpression(RuleValue.Null);
+                    return new LiteralExpression(RuleValues.Null);
                 case T.Ident when !t.Quoted && Keywords.Contains(t.Text):
                     throw Error($"Unexpected '{t.Text}'", t);
                 case T.Ident:
@@ -325,6 +441,9 @@ public static partial class RuleText
                     if (!IsOp("(")) return new VarExpression(t.Text);
                     var args = Args();
                     return (t.Quoted ? null : (RuleExpression?)LiteralCall(t, args)) ?? new CallExpression(t.Text, args);
+                case T.Path:
+                    Next();
+                    return PathLiteral(t);
                 case T.Op when t.Text == "(":
                     Next();
                     var inner = Ternary();
@@ -332,16 +451,16 @@ public static partial class RuleText
                     return inner;
                 case T.Op when t.Text == "[":
                     Next();
-                    var items = new List<RuleValue>();
+                    var items = new List<Value>();
                     if (!Accept("]"))
                     {
                         do items.Add(Constant()); while (Accept(","));
                         Expect("]");
                     }
-                    return new LiteralExpression(RuleValue.List(items));
+                    return new LiteralExpression(new ArrayValue(items));
                 case T.Op when t.Text == "{":
                     Next();
-                    var map = new Dictionary<string, RuleValue>(StringComparer.Ordinal);
+                    var map = new Dictionary<string, Value>(StringComparer.Ordinal);
                     if (!Accept("}"))
                     {
                         do
@@ -354,7 +473,7 @@ public static partial class RuleText
                         } while (Accept(","));
                         Expect("}");
                     }
-                    return new LiteralExpression(RuleValue.Map(map));
+                    return new LiteralExpression(new MapValue(map));
                 case T.End:
                     throw Error("The condition ended too early", t);
                 default:
@@ -362,8 +481,68 @@ public static partial class RuleText
             }
         }
 
+        /// <summary>
+        /// <c>/users/$(request.auth.uid)/notes/n1</c>: a constant path, or <c>path('users', request.auth.uid, 'notes', 'n1')</c>.
+        /// Firebase's <c>/databases/$(database)/documents/…</c> prefix is dropped, so its rules read as they are.
+        /// </summary>
+        private RuleExpression PathLiteral(Token t)
+        {
+            var parts = new List<RuleExpression>();
+            var raw = t.Text;
+            var i = 0;
+            while (i < raw.Length)
+            {
+                i++;   // the '/'
+                var start = i;
+                if (i + 1 < raw.Length && raw[i] == '$' && raw[i + 1] == '(')
+                {
+                    var depth = 0;
+                    var j = i + 1;
+                    for (; j < raw.Length; j++)
+                    {
+                        if (raw[j] is '\'' or '"')
+                        {
+                            var q = raw[j++];
+                            while (j < raw.Length && raw[j] != q) j += raw[j] == '\\' ? 2 : 1;
+                            continue;
+                        }
+                        if (raw[j] == '(') depth++;
+                        else if (raw[j] == ')' && --depth == 0) break;
+                    }
+                    var innerStart = i + 2;
+                    var inner = raw[innerStart..j];
+                    RuleExpression e;
+                    try
+                    {
+                        e = new Parser(inner).ParseAll();
+                    }
+                    catch (RuleSyntaxException ex)
+                    {
+                        throw Error(ex.Reason == "A condition is empty" ? "$( ) needs an expression" : ex.Reason, t.Offset + innerStart + ex.Offset);
+                    }
+                    parts.Add(e);
+                    i = j + 1;
+                }
+                else
+                {
+                    while (i < raw.Length && raw[i] != '/') i++;
+                    parts.Add(new LiteralExpression(new StringValue(raw[start..i])));
+                }
+            }
+
+            if (parts.Count >= 3 && parts[0] is LiteralExpression { Value: StringValue { Value: "databases" } }
+                && parts[1] is VarExpression { Name: "database" }
+                && parts[2] is LiteralExpression { Value: StringValue { Value: "documents" } })
+                parts.RemoveRange(0, 3);
+            if (parts.Count == 0) throw Error("A path needs at least one segment after /databases/$(database)/documents", t);
+
+            return parts.All(x => x is LiteralExpression)
+                ? new LiteralExpression(new ReferenceValue(string.Join('/', parts.Select(x => ((StringValue)((LiteralExpression)x).Value).Value))))
+                : new CallExpression("path", parts);
+        }
+
         // A list or map element: only constants (the expression model has no list or map construction).
-        private RuleValue Constant()
+        private Value Constant()
         {
             var at = Peek;
             var e = Unary();
@@ -374,37 +553,38 @@ public static partial class RuleText
         private LiteralExpression? LiteralCall(Token name, List<RuleExpression> args)
         {
             if (name.Text is not ("timestamp" or "path" or "bytes" or "float")) return null;
-            if (args is not [LiteralExpression { Value.Kind: RuleValueKind.String } arg])
+            // path(a, b, …) with anything but one constant string joins its parts at evaluation.
+            if (name.Text == "path" && args is not [LiteralExpression { Value: StringValue }]) return null;
+            if (args is not [LiteralExpression { Value: StringValue { Value: var s } }])
                 throw Error($"{name.Text}() takes one string", name);
-            var s = arg.Value.AsString;
             switch (name.Text)
             {
                 case "timestamp":
                     return DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var ts)
-                        ? new LiteralExpression(RuleValue.Timestamp(ts))
+                        ? new LiteralExpression(new TimestampValue(ts))
                         : throw Error($"'{s}' is not an ISO-8601 timestamp", name);
                 case "path":
-                    return new LiteralExpression(RuleValue.Path(s));
+                    return new LiteralExpression(new ReferenceValue(s));
                 case "bytes":
-                    try { return new LiteralExpression(RuleValue.Bytes(Convert.FromBase64String(s))); }
+                    try { return new LiteralExpression(new BytesValue(Convert.FromBase64String(s))); }
                     catch (FormatException) { throw Error($"'{s}' is not base64", name); }
                 default:
                     // Rules are stored as JSON, which has no NaN or Infinity.
                     return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) && double.IsFinite(d)
-                        ? new LiteralExpression(RuleValue.Double(d))
+                        ? new LiteralExpression(new DoubleValue(d))
                         : throw Error($"'{s}' is not a finite number", name);
             }
         }
 
-        private RuleValue Number(Token t, bool negative)
+        private Value Number(Token t, bool negative)
         {
             var s = negative ? "-" + t.Text : t.Text;
             if (!t.Text.Contains('.') && !t.Text.Contains('e') && !t.Text.Contains('E'))
                 return long.TryParse(s, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var l)
-                    ? RuleValue.Int(l)
+                    ? new IntegerValue(l)
                     : throw Error($"{s} is out of range for an integer", t);
             return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)
-                ? RuleValue.Double(d)
+                ? new DoubleValue(d)
                 : throw Error($"'{s}' is not a number", t);
         }
 
@@ -412,7 +592,7 @@ public static partial class RuleText
 
         private RuleSyntaxException Error(string message, int offset) => RuleText.Error(_text, message, offset);
 
-        private static readonly string[] Operators = ["&&", "||", "==", "!=", "<=", ">=", "<", ">", "!", "?", ":", ".", ",", "(", ")", "[", "]", "{", "}", "-"];
+        private static readonly string[] Operators = ["&&", "||", "==", "!=", "<=", ">=", "<", ">", "!", "?", ":", ".", ",", "(", ")", "[", "]", "{", "}", "-", "+", "*", "/", "%"];
 
         private static List<Token> Lex(string text)
         {
@@ -498,6 +678,11 @@ public static partial class RuleText
                     }
                     tokens.Add(new Token(T.String, sb.ToString(), start));
                 }
+                else if (c == '/' && !PrecededByValue(tokens))
+                {
+                    i = LexPath(text, i);
+                    tokens.Add(new Token(T.Path, text[start..i], start));
+                }
                 else
                 {
                     var op = Operators.FirstOrDefault(o => string.CompareOrdinal(text, i, o, 0, o.Length) == 0);
@@ -511,9 +696,47 @@ public static partial class RuleText
             return tokens;
         }
 
+        /// <summary>Scans a path literal from its first '/': segments of path characters or <c>$( … )</c>; returns its end.</summary>
+        private static int LexPath(string text, int i)
+        {
+            while (i < text.Length && text[i] == '/' && !(i + 1 < text.Length && text[i + 1] == '/'))
+            {
+                var segmentStart = ++i;
+                if (i + 1 < text.Length && text[i] == '$' && text[i + 1] == '(')
+                {
+                    var depth = 0;
+                    i++;
+                    while (true)
+                    {
+                        if (i >= text.Length || text[i] == '\n') throw RuleText.Error(text, "A $( … ) in a path isn't closed", segmentStart);
+                        var ch = text[i];
+                        if (ch is '\'' or '"')
+                        {
+                            i++;
+                            while (i < text.Length && text[i] != ch && text[i] != '\n') i += text[i] == '\\' ? 2 : 1;
+                            i++;
+                            continue;
+                        }
+                        if (ch == '(') depth++;
+                        else if (ch == ')' && --depth == 0) { i++; break; }
+                        i++;
+                    }
+                }
+                else
+                {
+                    while (i < text.Length && IsPathChar(text[i])) i++;
+                }
+                if (i == segmentStart) throw RuleText.Error(text, "A path segment is empty", segmentStart);
+            }
+            return i;
+        }
+
         // ".5" starts a number unless it follows something a member access could apply to (x.5 is an error later).
+        // (The words before an operand — `in`, and `only`/`all`/`any` after `has`/`changes` — aren't values, so
+        // `x in /a/b` is a path literal.)
         private static bool PrecededByValue(List<Token> tokens) =>
-            tokens.Count > 0 && tokens[^1] is { Kind: T.Ident or T.Number or T.String } or { Kind: T.Op, Text: ")" or "]" };
+            tokens.Count > 0 && tokens[^1] is { Kind: T.Ident or T.Number or T.String or T.Path } or { Kind: T.Op, Text: ")" or "]" }
+            && tokens[^1] is not { Kind: T.Ident, Quoted: false, Text: "in" or "only" or "all" or "any" };
     }
 
     private static RuleSyntaxException Error(string text, string message, int offset)

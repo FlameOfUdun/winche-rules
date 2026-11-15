@@ -11,5 +11,5 @@ public static class PathMatcher
 {
     /// <summary>True when <paramref name="path"/> matches the Firestore-style <paramref name="pattern"/>.</summary>
     public static bool IsMatch(string pattern, string path) =>
-        PathPattern.TryMatch(PathPattern.Parse(pattern), path, out _);
+        RulePath.TryMatch(RulePath.Parse(pattern), path, out _);
 }

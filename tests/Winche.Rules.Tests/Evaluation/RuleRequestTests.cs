@@ -10,8 +10,8 @@ public class RuleRequestTests
     public void Defaults_AreNullAndNoParams()
     {
         var req = new RuleRequest();
-        Assert.True(req.Resource.IsNull);
-        Assert.True(req.Request.IsNull);
+        Assert.True(req.Resource is NullValue);
+        Assert.True(req.Request is NullValue);
         Assert.Empty(req.Params);
         Assert.Null(req.Provider);
     }

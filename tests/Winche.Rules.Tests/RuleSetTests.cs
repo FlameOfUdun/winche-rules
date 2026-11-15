@@ -1,3 +1,4 @@
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
@@ -10,12 +11,12 @@ public class RuleSetTests
 {
     private static RuleContext Ctx(string? uid) => new()
     {
-        Request = RuleValue.Map(new Dictionary<string, RuleValue>
+        Request = new MapValue(new Dictionary<string, Value>
         {
-            ["method"] = RuleValue.String("get"),
+            ["method"] = new StringValue("get"),
             ["auth"] = uid is null
-                ? RuleValue.Null
-                : RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String(uid) }),
+                ? RuleValues.Null
+                : new MapValue(new Dictionary<string, Value> { ["uid"] = new StringValue(uid) }),
         }),
     };
 

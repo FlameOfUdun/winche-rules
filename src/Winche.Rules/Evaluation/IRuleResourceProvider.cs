@@ -12,7 +12,7 @@ public interface IRuleResourceProvider
     Task<bool> ExistsAsync(string path, CancellationToken ct = default);
 
     /// <summary>
-    /// The document at <paramref name="path"/> as a map, or <see cref="RuleValue.Null"/> if it does not exist.
+    /// The document at <paramref name="path"/> as a map, or <see cref="RuleValues.Null"/> if it does not exist.
     /// </summary>
-    Task<RuleValue> GetAsync(string path, CancellationToken ct = default);
+    Task<Value> GetAsync(string path, CancellationToken ct = default);
 }

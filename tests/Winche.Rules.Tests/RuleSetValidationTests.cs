@@ -2,11 +2,12 @@ using Winche.Rules.Expressions;
 using Winche.Rules.Text;
 using Xunit;
 
+using Winche.Values;
 namespace Winche.Rules.Tests;
 
 public class RuleSetValidationTests
 {
-    private static readonly AllowRule ReadAll = new([RuleOperation.Get], new LiteralExpression(RuleValue.Bool(true)));
+    private static readonly AllowRule ReadAll = new([RuleOperation.Get], new LiteralExpression(RuleValues.True));
 
     private static MatchBlock Block(string path, params MatchBlock[] nested) => new(path, [ReadAll], nested);
 

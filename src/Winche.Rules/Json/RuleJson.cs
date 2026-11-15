@@ -11,7 +11,7 @@ public static class RuleJson
     /// <summary>
     /// The serializer options the rule model round-trips with.
     /// </summary>
-    public static JsonSerializerOptions Options { get; } = new();
+    public static JsonSerializerOptions Options { get; } = new() { Converters = { new RuleLiteralJsonConverter() } };
 
     /// <summary>
     /// Serializes a condition expression to JSON.

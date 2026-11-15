@@ -10,25 +10,24 @@ namespace Winche.Rules.Evaluation;
 /// </summary>
 public sealed class RuleRequest
 {
-    /// <summary>The existing resource as a map (its field layout is entirely up to you), or <see cref="RuleValue.Null"/>.</summary>
-    public RuleValue Resource { get; init; } = RuleValue.Null;
+    /// <summary>The existing resource as a map (its field layout is entirely up to you), or <see cref="RuleValues.Null"/>.</summary>
+    public Value Resource { get; init; } = RuleValues.Null;
 
-    /// <summary>The request map (<c>auth</c>, <c>resource</c>, <c>time</c>, <c>method</c>, …), or <see cref="RuleValue.Null"/>.</summary>
-    public RuleValue Request { get; init; } = RuleValue.Null;
+    /// <summary>The request map (<c>auth</c>, <c>resource</c>, <c>time</c>, <c>method</c>, …), or <see cref="RuleValues.Null"/>.</summary>
+    public Value Request { get; init; } = RuleValues.Null;
 
     /// <summary>Path-pattern captures (e.g. <c>userId</c> from <c>users/{userId}</c>).</summary>
-    public IReadOnlyDictionary<string, RuleValue> Params { get; init; } = RuleContext.NoParams;
+    public IReadOnlyDictionary<string, Value> Params { get; init; } = RuleContext.NoParams;
 
     /// <summary>Backs <c>get()</c>/<c>exists()</c>; may be <c>null</c> when no rule uses them.</summary>
     public IRuleResourceProvider? Provider { get; init; }
 
     /// <summary>Builds the engine-internal <see cref="RuleContext"/>, injecting the engine's comparer.</summary>
-    internal RuleContext ToContext(IRuleValueComparer comparer) => new()
+    internal RuleContext ToContext() => new()
     {
         Resource = Resource,
         Request = Request,
         Params = Params,
         Provider = Provider,
-        Comparer = comparer,
     };
 }

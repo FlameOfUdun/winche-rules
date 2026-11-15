@@ -1,3 +1,4 @@
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
@@ -10,16 +11,16 @@ public class QueryAnalyzerTests
 {
     private static RuleContext Ctx(string? uid) => new()
     {
-        Request = RuleValue.Map(new Dictionary<string, RuleValue>
+        Request = new MapValue(new Dictionary<string, Value>
         {
-            ["method"] = RuleValue.String("list"),
+            ["method"] = new StringValue("list"),
             ["auth"] = uid is null
-                ? RuleValue.Null
-                : RuleValue.Map(new Dictionary<string, RuleValue> { ["uid"] = RuleValue.String(uid) }),
+                ? RuleValues.Null
+                : new MapValue(new Dictionary<string, Value> { ["uid"] = new StringValue(uid) }),
         }),
     };
 
-    private static QueryConstraint C(string field, ComparisonOperator op, RuleValue value) => new([field], op, value);
+    private static QueryConstraint C(string field, ComparisonOperator op, Value value) => new([field], op, value);
     private static QueryConstraints Q(string collection, params QueryConstraint[] constraints) => new(collection, constraints);
 
     private static bool Allows(RuleSet rs, QueryConstraints q, string? uid) => QueryAnalyzer.Allows(rs, q, Ctx(uid));
@@ -33,10 +34,10 @@ public class QueryAnalyzerTests
             r.Match("users/{userId}", u =>
                 u.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
 
-        Assert.True(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1")); // constrained to me
+        Assert.True(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, new StringValue("u1"))), "u1")); // constrained to me
         Assert.False(Allows(rs, Q("users"), "u1"));                                                     // unconstrained → reject
-        Assert.False(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, RuleValue.String("other"))), "u1")); // constrained to someone else
-        Assert.False(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), uid: null)); // unauthenticated
+        Assert.False(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, new StringValue("other"))), "u1")); // constrained to someone else
+        Assert.False(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, new StringValue("u1"))), uid: null)); // unauthenticated
     }
 
     // ── Public OR owner ────────────────────────────────────────────────────────
@@ -49,10 +50,10 @@ public class QueryAnalyzerTests
                 Expr.Resource("isPublic").Eq(true),
                 Expr.Resource("ownerId").Eq(Expr.Auth("uid"))))));
 
-        Assert.True(Allows(rs, Q("docs", C("isPublic", ComparisonOperator.Eq, RuleValue.Bool(true))), "u1"));   // proves public branch
-        Assert.True(Allows(rs, Q("docs", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));  // proves owner branch
+        Assert.True(Allows(rs, Q("docs", C("isPublic", ComparisonOperator.Eq, RuleValues.True)), "u1"));   // proves public branch
+        Assert.True(Allows(rs, Q("docs", C("ownerId", ComparisonOperator.Eq, new StringValue("u1"))), "u1"));  // proves owner branch
         Assert.False(Allows(rs, Q("docs"), "u1"));                                                     // proves neither
-        Assert.False(Allows(rs, Q("docs", C("isPublic", ComparisonOperator.Eq, RuleValue.Bool(false))), "u1")); // public=false, owner unknown
+        Assert.False(Allows(rs, Q("docs", C("isPublic", ComparisonOperator.Eq, RuleValues.False)), "u1")); // public=false, owner unknown
     }
 
     // ── Always-allowed ─────────────────────────────────────────────────────────
@@ -72,9 +73,9 @@ public class QueryAnalyzerTests
         var rs = RuleSetBuilder.Build(r =>
             r.Match("people/{id}", d => d.Allow(RuleOperations.Read, Expr.Resource("age").Ge(Expr.Const(18)))));
 
-        Assert.True(Allows(rs, Q("people", C("age", ComparisonOperator.Ge, RuleValue.Int(18))), "x"));   // exact
-        Assert.True(Allows(rs, Q("people", C("age", ComparisonOperator.Eq, RuleValue.Int(20))), "x"));   // pinned 20 ≥ 18
-        Assert.False(Allows(rs, Q("people", C("age", ComparisonOperator.Ge, RuleValue.Int(10))), "x"));  // ≥10 does NOT prove ≥18
+        Assert.True(Allows(rs, Q("people", C("age", ComparisonOperator.Ge, new IntegerValue(18))), "x"));   // exact
+        Assert.True(Allows(rs, Q("people", C("age", ComparisonOperator.Eq, new IntegerValue(20))), "x"));   // pinned 20 ≥ 18
+        Assert.False(Allows(rs, Q("people", C("age", ComparisonOperator.Ge, new IntegerValue(10))), "x"));  // ≥10 does NOT prove ≥18
         Assert.False(Allows(rs, Q("people"), "x"));                                             // unconstrained
     }
 
@@ -85,7 +86,7 @@ public class QueryAnalyzerTests
     {
         var rs = RuleSetBuilder.Build(r =>
             r.Match("docs/{id}", d => d.Allow(RuleOperations.Read, Expr.Exists(Expr.Const("teams/t")))));
-        Assert.False(Allows(rs, Q("docs", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));
+        Assert.False(Allows(rs, Q("docs", C("ownerId", ComparisonOperator.Eq, new StringValue("u1"))), "u1"));
     }
 
     [Fact]
@@ -94,7 +95,7 @@ public class QueryAnalyzerTests
         // allow read: if request.auth.uid == userId  — fine for GET, but a LIST can't prove the per-doc id.
         var rs = RuleSetBuilder.Build(r =>
             r.Match("users/{userId}", u => u.Allow(RuleOperations.Read, Expr.Auth("uid").Eq(Expr.Param("userId")))));
-        Assert.False(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));
+        Assert.False(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, new StringValue("u1"))), "u1"));
     }
 
     // ── Subcollection: parent wildcard is bound, leaf is symbolic ──────────────
@@ -108,7 +109,7 @@ public class QueryAnalyzerTests
                     p.Allow(RuleOperations.Read, Expr.Resource("authorId").Eq(Expr.Param("userId"))))));
 
         // userId is bound to u1 from the collection path; query pins authorId == u1 → provable
-        Assert.True(Allows(rs, Q("users/u1/posts", C("authorId", ComparisonOperator.Eq, RuleValue.String("u1"))), "anyone"));
+        Assert.True(Allows(rs, Q("users/u1/posts", C("authorId", ComparisonOperator.Eq, new StringValue("u1"))), "anyone"));
         Assert.False(Allows(rs, Q("users/u1/posts"), "anyone"));   // unconstrained
     }
 
@@ -145,13 +146,13 @@ public class QueryAnalyzerTests
                 b.Allow(RuleOperations.Read, Expr.Resource("ownerId").Eq(Expr.Auth("uid")))));
 
         // list on "users" constrained to ownerId == uid → allowed
-        Assert.True(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));
+        Assert.True(Allows(rs, Q("users", C("ownerId", ComparisonOperator.Eq, new StringValue("u1"))), "u1"));
         // list on "users" unconstrained → rejected
         Assert.False(Allows(rs, Q("users"), "u1"));
         // list on subcollection users/u1/posts constrained → allowed (prefix "users" matches)
-        Assert.True(Allows(rs, Q("users/u1/posts", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));
+        Assert.True(Allows(rs, Q("users/u1/posts", C("ownerId", ComparisonOperator.Eq, new StringValue("u1"))), "u1"));
         // list on unrelated collection → rejected (prefix "users" does not match)
-        Assert.False(Allows(rs, Q("orders", C("ownerId", ComparisonOperator.Eq, RuleValue.String("u1"))), "u1"));
+        Assert.False(Allows(rs, Q("orders", C("ownerId", ComparisonOperator.Eq, new StringValue("u1"))), "u1"));
     }
 
     [Fact]
@@ -163,7 +164,7 @@ public class QueryAnalyzerTests
                 b.Allow(RuleOperations.Read, Expr.Resource("org").Eq(Expr.Param("orgId")))));
 
         // "orgs/acme/items" → orgId bound to "acme"; query pins org == "acme" → allowed
-        Assert.True(Allows(rs, Q("orgs/acme/items", C("org", ComparisonOperator.Eq, RuleValue.String("acme"))), "any"));
+        Assert.True(Allows(rs, Q("orgs/acme/items", C("org", ComparisonOperator.Eq, new StringValue("acme"))), "any"));
         // same collection, unconstrained → rejected
         Assert.False(Allows(rs, Q("orgs/acme/items"), "any"));
     }

@@ -1,3 +1,4 @@
+using Winche.Values;
 using Winche.Rules;
 using Winche.Rules.Evaluation;
 using Winche.Rules.Expressions;
@@ -9,17 +10,17 @@ public class EvaluatorTests
 {
     // ── Context builders ───────────────────────────────────────────────────────
 
-    private static RuleValue Map(params (string K, RuleValue V)[] e) =>
-        RuleValue.Map(e.ToDictionary(x => x.K, x => x.V));
+    private static MapValue Map(params (string K, Value V)[] e) =>
+        new MapValue(e.ToDictionary(x => x.K, x => x.V));
 
-    private static RuleValue Resource(RuleValue data) => Map(("data", data), ("__name__", RuleValue.Path("c/x")));
-    private static RuleValue Auth(string uid) => Map(("uid", RuleValue.String(uid)));
+    private static Value Resource(Value data) => Map(("data", data), ("__name__", new ReferenceValue("c/x")));
+    private static Value Auth(string uid) => Map(("uid", new StringValue(uid)));
 
-    private static RuleContext Ctx(RuleValue? resource = null, RuleValue? auth = null, IRuleResourceProvider? docs = null) =>
+    private static RuleContext Ctx(Value? resource = null, Value? auth = null, IRuleResourceProvider? docs = null) =>
         new()
         {
-            Resource = resource ?? RuleValue.Null,
-            Request = Map(("method", RuleValue.String("get")), ("auth", auth ?? RuleValue.Null), ("resource", RuleValue.Null)),
+            Resource = resource ?? RuleValues.Null,
+            Request = Map(("method", new StringValue("get")), ("auth", auth ?? RuleValues.Null), ("resource", RuleValues.Null)),
             Provider = docs,
         };
 
@@ -31,8 +32,8 @@ public class EvaluatorTests
     public async Task Owner_Allows_Owner_Denies_Other()
     {
         var cond = Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid"));
-        Assert.True(await Eval(cond, Ctx(Resource(Map(("ownerId", RuleValue.String("me")))), Auth("me"))));
-        Assert.False(await Eval(cond, Ctx(Resource(Map(("ownerId", RuleValue.String("me")))), Auth("other"))));
+        Assert.True(await Eval(cond, Ctx(Resource(Map(("ownerId", new StringValue("me")))), Auth("me"))));
+        Assert.False(await Eval(cond, Ctx(Resource(Map(("ownerId", new StringValue("me")))), Auth("other"))));
     }
 
     [Fact]
@@ -42,8 +43,8 @@ public class EvaluatorTests
             Expr.Resource("data", "isPublic").Eq(true),
             Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")));
 
-        Assert.True(await Eval(cond, Ctx(Resource(Map(("isPublic", RuleValue.Bool(true)), ("ownerId", RuleValue.String("x")))), Auth("me"))));
-        Assert.False(await Eval(cond, Ctx(Resource(Map(("isPublic", RuleValue.Bool(false)), ("ownerId", RuleValue.String("x")))), Auth("me"))));
+        Assert.True(await Eval(cond, Ctx(Resource(Map(("isPublic", RuleValues.True), ("ownerId", new StringValue("x")))), Auth("me"))));
+        Assert.False(await Eval(cond, Ctx(Resource(Map(("isPublic", RuleValues.False), ("ownerId", new StringValue("x")))), Auth("me"))));
     }
 
     [Fact]
@@ -51,7 +52,7 @@ public class EvaluatorTests
     {
         // resource.data has no ownerId → evaluation error → deny (not throw)
         var cond = Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid"));
-        Assert.False(await Eval(cond, Ctx(Resource(Map(("name", RuleValue.String("x")))), Auth("me"))));
+        Assert.False(await Eval(cond, Ctx(Resource(Map(("name", new StringValue("x")))), Auth("me"))));
     }
 
     [Fact]
@@ -62,33 +63,33 @@ public class EvaluatorTests
             Expr.Auth().Ne(Expr.Null),
             Expr.Resource("data", "ownerId").Eq(Expr.Auth("uid")));
 
-        Assert.False(await Eval(cond, Ctx(Resource(Map(("ownerId", RuleValue.String("me")))), auth: null)));   // unauth → short-circuits false
-        Assert.True(await Eval(cond, Ctx(Resource(Map(("ownerId", RuleValue.String("me")))), Auth("me"))));
+        Assert.False(await Eval(cond, Ctx(Resource(Map(("ownerId", new StringValue("me")))), auth: null)));   // unauth → short-circuits false
+        Assert.True(await Eval(cond, Ctx(Resource(Map(("ownerId", new StringValue("me")))), Auth("me"))));
     }
 
     [Fact]
     public async Task Membership_And_Size()
     {
-        var members = RuleValue.List([RuleValue.String("a"), RuleValue.String("me")]);
+        var members = new ArrayValue([new StringValue("a"), new StringValue("me")]);
         Assert.True(await Eval(Expr.Auth("uid").In(Expr.Resource("data", "members")), Ctx(Resource(Map(("members", members))), Auth("me"))));
         Assert.True(await Eval(Expr.Size(Expr.Resource("data", "members")).Eq(Expr.Const(2)), Ctx(Resource(Map(("members", members))), Auth("me"))));
     }
 
     // ── Cross-document get()/exists() ──────────────────────────────────────────
 
-    private sealed class FakeDocs(Dictionary<string, RuleValue> docs) : IRuleResourceProvider
+    private sealed class FakeDocs(Dictionary<string, Value> docs) : IRuleResourceProvider
     {
         public Task<bool> ExistsAsync(string path, CancellationToken ct = default) => Task.FromResult(docs.ContainsKey(path));
-        public Task<RuleValue> GetAsync(string path, CancellationToken ct = default) =>
-            Task.FromResult(docs.TryGetValue(path, out var v) ? v : RuleValue.Null);
+        public Task<Value> GetAsync(string path, CancellationToken ct = default) =>
+            Task.FromResult(docs.TryGetValue(path, out var v) ? v : RuleValues.Null);
     }
 
     [Fact]
     public async Task GetAndExists_LookUpAnotherDocument()
     {
-        var docs = new FakeDocs(new Dictionary<string, RuleValue>
+        var docs = new FakeDocs(new Dictionary<string, Value>
         {
-            ["teams/t1"] = Resource(Map(("active", RuleValue.Bool(true)))),
+            ["teams/t1"] = Resource(Map(("active", RuleValues.True))),
         });
         // exists(teams/t1) && get(teams/t1).data.active == true
         var cond = Expr.All(

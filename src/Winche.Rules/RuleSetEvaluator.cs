@@ -21,10 +21,10 @@ public static class RuleSetEvaluator
         RuleContext context,
         CancellationToken ct = default)
     {
-        foreach (var (pattern, allow) in RuleFlatten.Flatten(ruleset.Matches, []))
+        foreach (var (pattern, allow) in RuleFlatten.Flatten(ruleset))
         {
             if (!allow.Operations.Contains(operation)) continue;
-            if (!PathPattern.TryMatch(pattern, documentPath, out var captures)) continue;
+            if (!RulePath.TryMatch(pattern, documentPath, out var captures)) continue;
 
             foreach (var (k, v) in context.Params) captures.TryAdd(k, v);   // path captures take precedence
             var scoped = new RuleContext
@@ -33,7 +33,6 @@ public static class RuleSetEvaluator
                 Request = context.Request,
                 Params = captures,
                 Provider = context.Provider,
-                Comparer = context.Comparer,
             };
 
             if (await RuleEvaluator.EvaluateAsync(allow.Condition, scoped, ct).ConfigureAwait(false))

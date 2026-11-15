@@ -12,30 +12,25 @@ public sealed class RuleContext
     /// <summary>
     /// The empty parameter set.
     /// </summary>
-    public static readonly IReadOnlyDictionary<string, RuleValue> NoParams = new ReadOnlyDictionary<string, RuleValue>(new Dictionary<string, RuleValue>());
+    public static readonly IReadOnlyDictionary<string, Value> NoParams = new ReadOnlyDictionary<string, Value>(new Dictionary<string, Value>());
 
     /// <summary>
-    /// The existing resource as a map (its field layout is entirely up to you), or <see cref="RuleValue.Null"/>.
+    /// The existing resource as a map (its field layout is entirely up to you), or <see cref="RuleValues.Null"/>.
     /// </summary>
-    public RuleValue Resource { get; init; } = RuleValue.Null;
+    public Value Resource { get; init; } = RuleValues.Null;
 
     /// <summary>
     /// The request (a map with <c>auth</c>, <c>resource</c>, <c>time</c>, <c>method</c>, …).
     /// </summary>
-    public RuleValue Request { get; init; } = RuleValue.Null;
+    public Value Request { get; init; } = RuleValues.Null;
 
     /// <summary>
     /// Path-pattern captures (e.g. <c>userId</c> from <c>users/{userId}</c>).
     /// </summary>
-    public IReadOnlyDictionary<string, RuleValue> Params { get; init; } = NoParams;
+    public IReadOnlyDictionary<string, Value> Params { get; init; } = NoParams;
 
     /// <summary>
     /// Backs <c>get()</c>/<c>exists()</c>; may be <c>null</c> when no rule uses them.
     /// </summary>
     public IRuleResourceProvider? Provider { get; init; }
-
-    /// <summary>
-    /// The comparer used for equality/ordering; defaults to <see cref="DefaultRuleValueComparer"/>.
-    /// </summary>
-    public IRuleValueComparer Comparer { get; init; } = new DefaultRuleValueComparer();
 }

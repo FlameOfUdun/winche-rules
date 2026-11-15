@@ -57,8 +57,7 @@ public class RuleSetTextTests
         Assert.Equal("""
             match users/{uid} {
               allow read: if request.auth.uid == uid;
-              allow create: if request.auth.uid == uid
-                && request.resource.data.keys().hasOnly(['name', 'email']);
+              allow create: if request.auth.uid == uid && request.resource.data has only ['name', 'email'];
               allow update, delete: if request.auth.uid == uid;
 
               match notes/{noteId} {
@@ -78,11 +77,11 @@ public class RuleSetTextTests
     {
         var rs = RuleText.ParseRuleSet("""
             match profiles/{uid} {
-              allow create: if request.auth.uid == uid && request.resource.data.keys().hasOnly(['name', 'email', 'photo']) && request.resource.data.name is string && request.resource.data.name.size() <= 50;
+              allow create: if request.auth.uid == uid && request.resource.data.keys().hasOnly(['name', 'email', 'photo']) && request.resource.data.name is string && request.resource.data.name.size() <= 50 && request.resource.data.photo is string;
             }
             """);
         var text = RuleText.FormatRuleSet(rs);
-        Assert.Contains("allow create: if request.auth.uid == uid\n    && request.resource.data.keys()", text);
+        Assert.Contains("allow create: if request.auth.uid == uid\n    && request.resource.data has only ['name', 'email', 'photo']", text);
         Assert.Equal(rs, RuleText.ParseRuleSet(text));
     }
 
@@ -108,7 +107,7 @@ public class RuleSetTextTests
     [InlineData("match users/{uid} {\n  allow read: if request.auth = null;\n}", "Use '==' to compare", 2, 31)]
     [InlineData("match users/{uid} {\n  allow read: if a\n}", "Missing ';' after the condition", 3, 1)]
     [InlineData("match users/{uid} {\n  allow read: if true;\n", "Missing '}' to close 'match users/{uid}'", 3, 1)]
-    [InlineData("match users/{u-id} {}", "Invalid capture name in '{u-id}'", 1, 7)]
+    [InlineData("match users/{u-id} {}", "'{u-id}' isn't a valid capture", 1, 7)]
     [InlineData("match a/{p=**} {\n  match b/{c} {}\n}", "'match a/{p=**}' ends in a recursive wildcard", 1, 7)]
     [InlineData("match users/{uid} {\n  allow read: if '; still a string';", "Missing '}' to close", 2, 37)]
     public void Errors_say_what_and_where(string text, string reason, int line, int column)
