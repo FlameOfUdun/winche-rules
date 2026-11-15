@@ -41,7 +41,7 @@ public class FunctionsAndPathsTests
     [InlineData("/teams/t1", "path('teams/t1')")]
     [InlineData("/users/$(request.auth.uid)", "path('users', request.auth.uid)")]
     [InlineData("/users/$(uid)/notes/$(id)", "path('users', uid, 'notes', id)")]
-    [InlineData("/databases/$(database)/documents/users/$(uid)", "path('users', uid)")]   // Firebase's prefix
+    [InlineData("/databases/$(database)/documents/users/$(uid)", "path('users', uid)")]   // the long prefix is dropped
     [InlineData("/a-b/c.d/$(x.y)", "path('a-b', 'c.d', x.y)")]
     public void Path_literals_are_paths(string literal, string same)
     {

@@ -176,7 +176,7 @@ public static class RuleFunctions
         v is StringValue s ? s.Value : throw new RuleEvaluationException($"{name}() expects a string, got {RuleValues.TypeName(v)}.");
 
     /// <summary>
-    /// <c>+ - * / %</c>: integers stay integers (<c>/</c> truncates, as in Firebase's rules), a float on either side makes
+    /// <c>+ - * / %</c>: integers stay integers (<c>/</c> truncates), a float on either side makes
     /// a float; <c>+</c> also joins two strings or two lists.
     /// </summary>
     private static Value Arithmetic(string name, Value a, Value b)

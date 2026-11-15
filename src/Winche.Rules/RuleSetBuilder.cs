@@ -78,7 +78,7 @@ internal sealed class MatchBuilder
         // Fail fast: validate the (relative) path pattern at build time rather than at evaluation.
         var parsed = RulePath.Parse(_path);
         // A recursive wildcard consumes the rest of the path, so nested matches under it can never
-        // be reached. Reject rather than silently producing dead rules (Firestore disallows this).
+        // be reached. Reject rather than silently producing dead rules.
         if (_matches.Count > 0 && parsed[^1] is RecursiveSegment)
             throw new ArgumentException(
                 $"match '{_path}' ends in a recursive wildcard and cannot contain nested matches; " +

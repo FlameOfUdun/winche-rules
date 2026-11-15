@@ -22,7 +22,7 @@ public sealed class RuleSyntaxException(string message, int offset, int line, in
 }
 
 /// <summary>
-/// The text form of rule conditions, close to Firestore's rules language:
+/// The text form of rule conditions:
 /// <code>
 /// request.auth.token.sub == userId
 ///   &amp;&amp; request.resource.data has only ['name', 'email']
@@ -483,7 +483,7 @@ public static partial class RuleText
 
         /// <summary>
         /// <c>/users/$(request.auth.uid)/notes/n1</c>: a constant path, or <c>path('users', request.auth.uid, 'notes', 'n1')</c>.
-        /// Firebase's <c>/databases/$(database)/documents/…</c> prefix is dropped, so its rules read as they are.
+        /// A <c>/databases/$(database)/documents/…</c> prefix is dropped, so rules written with it read as they are.
         /// </summary>
         private RuleExpression PathLiteral(Token t)
         {

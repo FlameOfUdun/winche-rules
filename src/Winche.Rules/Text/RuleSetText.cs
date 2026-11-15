@@ -5,7 +5,7 @@ using Winche.Rules.Matching;
 namespace Winche.Rules.Text;
 
 /// <summary>
-/// A whole ruleset as one text file, Firestore-style:
+/// A whole ruleset as one text file:
 /// <code>
 /// match users/{uid} {
 ///   allow read: if request.auth.uid == uid;

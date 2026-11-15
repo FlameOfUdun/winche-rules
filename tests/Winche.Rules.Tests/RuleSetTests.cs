@@ -77,7 +77,7 @@ public class RuleSetTests
 
         Assert.True(await Allows(rs, RuleOperation.Get, "files/a", "x"));       // 1 segment under → matches
         Assert.True(await Allows(rs, RuleOperation.Get, "files/a/b/c", "x"));   // deep → matches
-        Assert.False(await Allows(rs, RuleOperation.Get, "files", "x"));        // 0 segments under → no match (Firestore: 1+)
+        Assert.False(await Allows(rs, RuleOperation.Get, "files", "x"));        // 0 segments under → no match ({rest=**} needs 1+)
     }
 
     // ── Default-deny ────────────────────────────────────────────────────────
