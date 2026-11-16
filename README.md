@@ -9,6 +9,12 @@ A **standalone, declarative, JSON-serializable authorization rules engine** for 
 
 A "resource" here is anything you can address by a path — a record, a file, a row, an object — represented to the engine as a map of fields.
 
+## Install
+
+```sh
+dotnet add package Winche.Rules
+```
+
 ---
 
 ## Contents
