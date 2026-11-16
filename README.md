@@ -181,7 +181,7 @@ For `list` queries, a condition that doesn't depend on the documents — only on
 bound by the collection path, literals and these functions — is now simply evaluated (e.g.
 `request.auth.uid in ['admin1', 'admin2']`), instead of being rejected as unprovable.
 
-## Readable forms (4.1.0)
+## Readable forms (5.0.0)
 
 The everyday checks have short forms. Each is shorthand for a method chain — it parses to the same
 expression, so stored rules, the engine and query analysis are unchanged, and both spellings work:
@@ -210,7 +210,7 @@ comparisons: looser than `!`, tighter than `&&`. Only these word pairs are speci
 `only`, `all` and `any` alone are still ordinary names. `RuleText.Format` / `FormatRuleSet` write the readable
 forms; pass `readable: false` for the chains.
 
-## Functions and paths (4.1.0)
+## Functions and paths (5.0.0)
 
 Rules files can define functions — `function isOwner(uid) { let me = request.auth.uid; return me == uid; }`, at the
 top level or inside a `match` — stored with the ruleset (`RuleSet.Functions`, `MatchBlock.Functions`; omitted from
