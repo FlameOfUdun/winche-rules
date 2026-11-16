@@ -157,8 +157,8 @@ Every `{name}` in the enclosing matches is a variable: in `match users/{uid}/not
 | timestamps | `timestamp('2027-01-01T00:00:00Z')` |
 | paths | `/teams/t1`, `/users/$(request.auth.uid)` — see [Building paths](#building-paths) (or `path('teams/t1')`) |
 | bytes | `bytes('AAEC')` (base64) |
-| geo points | no literal; a stored location is a `geoPoint` — read `.latitude` and `.longitude` (a map that merely has those keys is not a `geoPoint`) |
-| file and user references | no literal; a stored reference is a `fileReference` (a file's path) or a `userReference` (a user's uid) |
+| geo points | no literal in rules (tests write `geoPoint(51.5, -0.12)`); a stored location is a `geoPoint` — read `.latitude` and `.longitude` (a map that merely has those keys is not a `geoPoint`) |
+| file and user references | no literal in rules (tests write `fileReference('…')`, `userReference('…')`); a stored reference is a `fileReference` (a file's path) or a `userReference` (a user's uid) |
 
 A field whose name isn't a plain identifier goes in backticks: ``resource.`first name` ``.
 
