@@ -8,7 +8,7 @@ namespace Winche.Rules.Json;
 /// How a rule's literal <see cref="Value"/> is stored in ruleset JSON. Unambiguous kinds use natural JSON
 /// (null/bool/string/list); kinds JSON can't represent faithfully are tagged single-key objects:
 /// <c>{"$integer":"5"}</c>, <c>{"$double":1.5}</c>, <c>{"$timestamp":"…"}</c>, <c>{"$bytes":"base64"}</c>,
-/// <c>{"$path":"…"}</c>, <c>{"$latlng":[lat,lng]}</c>. A plain object (no <c>$</c>-tag) is a map, so map field names
+/// <c>{"$documentReference":"…"}</c>, <c>{"$geoPoint":[lat,lng]}</c>. A plain object (no <c>$</c>-tag) is a map, so map field names
 /// must not begin with <c>$</c>. (The database's own wire format is a different, typed shape; this one keeps rules
 /// readable.)
 /// </summary>
@@ -60,10 +60,10 @@ public sealed class RuleLiteralJsonConverter : JsonConverter<Value>
                 "$double" => new DoubleValue(reader.GetDouble()),
                 "$timestamp" => new TimestampValue(DateTimeOffset.Parse(reader.GetString()!, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)),
                 "$bytes" => new BytesValue(Convert.FromBase64String(reader.GetString()!)),
-                "$path" => new ReferenceValue(reader.GetString()!),
-                "$fileRef" => new FileRefValue(reader.GetString()!),
-                "$userRef" => new UserRefValue(reader.GetString()!),
-                "$latlng" => ReadLatLng(ref reader),
+                "$documentReference" => new DocumentReferenceValue(reader.GetString()!),
+                "$fileReference" => new FileReferenceValue(reader.GetString()!),
+                "$userReference" => new UserReferenceValue(reader.GetString()!),
+                "$geoPoint" => ReadLatLng(ref reader),
                 _ => throw new JsonException($"Unknown rule value tag '{first}'."),
             };
             reader.Read();
@@ -107,12 +107,12 @@ public sealed class RuleLiteralJsonConverter : JsonConverter<Value>
                 break;
             case TimestampValue t: Tagged(writer, "$timestamp", t.Value.ToString("O", CultureInfo.InvariantCulture)); break;
             case BytesValue b: Tagged(writer, "$bytes", Convert.ToBase64String(b.Value)); break;
-            case ReferenceValue r: Tagged(writer, "$path", r.Path); break;
-            case FileRefValue f: Tagged(writer, "$fileRef", f.Path); break;
-            case UserRefValue u: Tagged(writer, "$userRef", u.Uid); break;
+            case DocumentReferenceValue r: Tagged(writer, "$documentReference", r.Path); break;
+            case FileReferenceValue f: Tagged(writer, "$fileReference", f.Path); break;
+            case UserReferenceValue u: Tagged(writer, "$userReference", u.Uid); break;
             case GeoPointValue g:
                 writer.WriteStartObject();
-                writer.WriteStartArray("$latlng");
+                writer.WriteStartArray("$geoPoint");
                 writer.WriteNumberValue(g.Latitude);
                 writer.WriteNumberValue(g.Longitude);
                 writer.WriteEndArray();

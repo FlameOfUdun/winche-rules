@@ -89,9 +89,9 @@ new DoubleValue(3.14)
 new StringValue("hello")
 new BytesValue(byteArray)
 new TimestampValue(DateTimeOffset.UtcNow)        // microsecond precision
-new ReferenceValue("users/u1")                    // a path
-new FileRefValue("scans/a.png")                   // a stored file
-new UserRefValue("u1")                            // a user, by uid
+new DocumentReferenceValue("users/u1")                    // a path
+new FileReferenceValue("scans/a.png")                   // a stored file
+new UserReferenceValue("u1")                            // a user, by uid
 new GeoPointValue(51.5, -0.12)                    // latitude, longitude
 
 // Collections
@@ -106,9 +106,9 @@ new MapValue(new Dictionary<string, Value>
 Value auth = Value.FromObject(new Dictionary<string, object?> { ["uid"] = "u1" });
 ```
 
-`Winche.Rules.RuleValues` adds the rules' view of values: `Null`, `True`, `False`, `Bool(bool)`, `Strings(IEnumerable<string>)`, `TypeName(Value)` (the rules-language type name: `string int float bool null map list timestamp bytes path fileRef userRef latlng`), `AreEqual` and `TryCompare`.
+`Winche.Rules.RuleValues` adds the rules' view of values: `Null`, `True`, `False`, `Bool(bool)`, `Strings(IEnumerable<string>)`, `TypeName(Value)` (the type name, as everywhere: `string integer double boolean null map array timestamp bytes documentReference fileReference userReference geoPoint`), `AreEqual` and `TryCompare`.
 
-Path captures bind as values too: `{id}` is a `StringValue`, a recursive `{rest=**}` a `ReferenceValue`; `path(...)` and `/a/b` literals are `ReferenceValue`s.
+Path captures bind as values too: `{id}` is a `StringValue`, a recursive `{rest=**}` a `DocumentReferenceValue`; `path(...)` and `/a/b` literals are `DocumentReferenceValue`s.
 
 Numbers compare across `IntegerValue`/`DoubleValue` by numeric value. Comparison across other types is undefined and denies — see [Comparison semantics](#comparison-semantics).
 
@@ -169,11 +169,11 @@ Besides `exists(path)` / `get(path)`, conditions can call these pure functions:
 | `m.keys()` | a map's keys (sorted) |
 | `l.hasOnly([...])` / `l.hasAll([...])` / `l.hasAny([...])` | every element of `l` is listed / `l` has all / any of them |
 | `after.diff(before)` | how two maps differ; then `.affectedKeys()`, `.addedKeys()`, `.removedKeys()`, `.changedKeys()`, `.unchangedKeys()` |
-| `x is string` | type check: `string int float number bool null map list timestamp bytes path fileRef userRef latlng` |
+| `x is string` | type check: `string integer double number boolean null map array timestamp bytes documentReference fileReference userReference geoPoint` (Winche.Core's value types; `number` is an integer or a double, and a path built in a rule is a `documentReference`) |
 | `s.matches('re')` | the whole string matches (100 ms limit; an invalid or slow regex denies) |
 | `s.lower()` / `s.upper()` | case conversion |
 | `m.get('key', default)` | the value at a key, or `default` when absent |
-| `g.latitude` / `g.longitude` | a `latlng`'s coordinates (a map that merely has those keys is not a `latlng`) |
+| `g.latitude` / `g.longitude` | a `geoPoint`'s coordinates (a map that merely has those keys is not a `geoPoint`) |
 
 A wrong argument or type is an evaluation error, which denies — like a missing field.
 
@@ -626,7 +626,7 @@ Note: `QueryAnalyzer` **always rejects** queries against rules that use `get()`/
 
 Equality (`==`, `!=`, `in`) and ordering (`<`, `<=`, `>`, `>=`) are fixed — there is no plug point. Rules compare exactly as the database orders values (`ValueComparer.Instance`), so the query analyzer's proofs agree with the store:
 
-- **Equal** (`RuleValues.AreEqual`) — same type (ints and floats are both numbers) and equal under `ValueComparer`. Values of different types are never equal, except that a `fileRef` equals its path and a `userRef` its uid as a string (so `resource.data.owner == request.auth.uid` holds either way).
+- **Equal** (`RuleValues.AreEqual`) — same type (integers and doubles are both numbers) and equal under `ValueComparer`. Values of different types are never equal, except that a `fileReference` equals its path and a `userReference` its uid as a string (so `resource.data.owner == request.auth.uid` holds either way).
 - **Ordered** (`RuleValues.TryCompare`) — values of the same type order as the database orders them; different types, or NaN, have no order, and ordering them is an error (which denies).
 
 ---
@@ -663,10 +663,10 @@ Expression nodes use a `kind` discriminator: `"literal"`, `"variable"`, `"member
 | `DoubleValue` | `{"$double":3.14}` |
 | `TimestampValue` | `{"$timestamp":"2025-01-01T00:00:00+00:00"}` |
 | `BytesValue` | `{"$bytes":"<base64>"}` |
-| `ReferenceValue` | `{"$path":"users/u1"}` |
-| `FileRefValue` | `{"$fileRef":"scans/a.png"}` |
-| `UserRefValue` | `{"$userRef":"u1"}` |
-| `GeoPointValue` | `{"$latlng":[51.5,-0.12]}` |
+| `DocumentReferenceValue` | `{"$documentReference":"users/u1"}` |
+| `FileReferenceValue` | `{"$fileReference":"scans/a.png"}` |
+| `UserReferenceValue` | `{"$userReference":"u1"}` |
+| `GeoPointValue` | `{"$geoPoint":[51.5,-0.12]}` |
 
 Map field names must not begin with `$` (it is reserved for the tagged-value encoding above).
 
@@ -723,7 +723,7 @@ This is useful for assembling per-module rulesets at startup, or for merging a b
 
 ### `Winche.Values` (Winche.Core)
 
-The value types rules evaluate on: `Value` and its records `NullValue`, `BooleanValue`, `IntegerValue`, `DoubleValue`, `StringValue`, `BytesValue`, `TimestampValue`, `ReferenceValue`, `FileRefValue`, `UserRefValue`, `GeoPointValue`, `ArrayValue`, `MapValue`; `Value.FromObject(object?)`, `ValueComparer.Instance`, `PlainJson.Of(value)`. See Winche.Core.
+The value types rules evaluate on: `Value` and its records `NullValue`, `BooleanValue`, `IntegerValue`, `DoubleValue`, `StringValue`, `BytesValue`, `TimestampValue`, `DocumentReferenceValue`, `FileReferenceValue`, `UserReferenceValue`, `GeoPointValue`, `ArrayValue`, `MapValue`; `Value.FromObject(object?)`, `ValueComparer.Instance`, `PlainJson.Of(value)`. See Winche.Core.
 
 ### `Winche.Rules.Expressions`
 
@@ -767,7 +767,7 @@ The value types rules evaluate on: `Value` and its records `NullValue`, `Boolean
 | Type | Role |
 | - | - |
 | `RuleJson` | `Serialize(RuleExpression)`, `DeserializeExpr(string)`, `Serialize(RuleSet)`, `DeserializeRuleSet(string)`. `static JsonSerializerOptions Options`. |
-| `RuleLiteralJsonConverter` | `System.Text.Json` converter for rule literals (`{"$integer":"5"}`, `{"$latlng":[lat,lng]}`, …); applied on `LiteralExpression.Value` and in `RuleJson.Options`. |
+| `RuleLiteralJsonConverter` | `System.Text.Json` converter for rule literals (`{"$integer":"5"}`, `{"$geoPoint":[lat,lng]}`, …); applied on `LiteralExpression.Value` and in `RuleJson.Options`. |
 
 ### `Winche.Rules.DependencyInjection`
 

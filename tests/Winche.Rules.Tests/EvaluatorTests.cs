@@ -13,7 +13,7 @@ public class EvaluatorTests
     private static MapValue Map(params (string K, Value V)[] e) =>
         new MapValue(e.ToDictionary(x => x.K, x => x.V));
 
-    private static Value Resource(Value data) => Map(("data", data), ("__name__", new ReferenceValue("c/x")));
+    private static Value Resource(Value data) => Map(("data", data), ("__name__", new DocumentReferenceValue("c/x")));
     private static Value Auth(string uid) => Map(("uid", new StringValue(uid)));
 
     private static RuleContext Ctx(Value? resource = null, Value? auth = null, IRuleResourceProvider? docs = null) =>

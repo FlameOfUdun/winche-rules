@@ -38,11 +38,11 @@ public class RuleValuesTests
     [Fact]
     public void Type_names_are_the_rules_language_ones()
     {
-        Assert.Equal("int", RuleValues.TypeName(new IntegerValue(1)));
-        Assert.Equal("float", RuleValues.TypeName(new DoubleValue(1)));
-        Assert.Equal("path", RuleValues.TypeName(new ReferenceValue("a/b")));
-        Assert.Equal("latlng", RuleValues.TypeName(new GeoPointValue(1, 2)));
-        Assert.Equal("list", RuleValues.TypeName(new ArrayValue([])));
+        Assert.Equal("integer", RuleValues.TypeName(new IntegerValue(1)));
+        Assert.Equal("double", RuleValues.TypeName(new DoubleValue(1)));
+        Assert.Equal("documentReference", RuleValues.TypeName(new DocumentReferenceValue("a/b")));
+        Assert.Equal("geoPoint", RuleValues.TypeName(new GeoPointValue(1, 2)));
+        Assert.Equal("array", RuleValues.TypeName(new ArrayValue([])));
     }
 
     private static readonly JsonSerializerOptions Literal = new() { Converters = { new RuleLiteralJsonConverter() } };
@@ -58,7 +58,7 @@ public class RuleValuesTests
         RoundTrips(new IntegerValue(42));
         RoundTrips(new DoubleValue(1.5));
         RoundTrips(new StringValue("hello"));
-        RoundTrips(new ReferenceValue("users/u1"));
+        RoundTrips(new DocumentReferenceValue("users/u1"));
         RoundTrips(new TimestampValue(new DateTimeOffset(2024, 6, 9, 12, 0, 0, TimeSpan.Zero)));
         RoundTrips(new BytesValue([1, 2, 3, 255]));
         RoundTrips(new GeoPointValue(51.5, -0.1));

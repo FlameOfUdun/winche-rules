@@ -37,8 +37,8 @@ public class RuleEngineTests
     {
         var rules = RuleText.ParseRuleSet("""
             match places/{id} {
-              allow get: if resource.data.at is latlng && resource.data.at.latitude > 50
-                && resource.data.owner is path && resource.data.owner == /users/u1
+              allow get: if resource.data.at is geoPoint && resource.data.at.latitude > 50
+                && resource.data.owner is documentReference && resource.data.owner == /users/u1
                 && resource.data.n == 3.0;
             }
             """);
@@ -49,7 +49,7 @@ public class RuleEngineTests
             {
                 ["data"] = new MapValue(new Dictionary<string, Value>
                 {
-                    ["at"] = at, ["owner"] = new ReferenceValue("users/u1"), ["n"] = new IntegerValue(3),
+                    ["at"] = at, ["owner"] = new DocumentReferenceValue("users/u1"), ["n"] = new IntegerValue(3),
                 }),
             }),
         };

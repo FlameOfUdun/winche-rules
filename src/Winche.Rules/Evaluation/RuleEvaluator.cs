@@ -149,7 +149,7 @@ public static class RuleEvaluator
                 var path = (await EvalAsync(Arg(call, 0), ctx, ct).ConfigureAwait(false));
                 var p = path switch
                 {
-                    ReferenceValue r => r.Path,
+                    DocumentReferenceValue r => r.Path,
                     StringValue str => str.Value,
                     _ => throw new RuleEvaluationException($"'{call.Name}()' expects a path string."),
                 };

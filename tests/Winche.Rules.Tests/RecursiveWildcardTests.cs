@@ -29,7 +29,7 @@ public class RecursiveWildcardTests
         Assert.Equal(matches, ok);
         if (!matches) return;
         var name = pattern.Contains("{path=**}") ? "path" : "rest";
-        Assert.Equal(captured, ((ReferenceValue)captures[name]).Path);
+        Assert.Equal(captured, ((DocumentReferenceValue)captures[name]).Path);
         if (pattern.Contains("{id}")) Assert.Equal(path.Split('/')[^1], ((StringValue)captures["id"]).Value);
     }
 

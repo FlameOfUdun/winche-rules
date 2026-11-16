@@ -23,7 +23,7 @@ public static class RuleFunctions
 {
     /// <summary>The type names <c>is</c> accepts.</summary>
     public static readonly IReadOnlyList<string> TypeNames =
-        ["string", "int", "float", "number", "bool", "null", "map", "list", "timestamp", "bytes", "path", "fileRef", "userRef", "latlng"];
+        ["string", "integer", "double", "number", "boolean", "null", "map", "array", "timestamp", "bytes", "documentReference", "fileReference", "userReference", "geoPoint"];
 
     /// <summary>The pure function names, plus the source-backed <c>exists</c> and <c>get(path)</c>.</summary>
     public static readonly IReadOnlyList<string> Names =
@@ -75,7 +75,7 @@ public static class RuleFunctions
     /// A path from its parts. A string or int is one segment, so a value can't add segments of its own
     /// (an id of <c>"u1/admin"</c> is an error, not two segments); a path value adds all of its segments.
     /// </summary>
-    private static ReferenceValue JoinPath(IReadOnlyList<Value> args)
+    private static DocumentReferenceValue JoinPath(IReadOnlyList<Value> args)
     {
         if (args.Count == 0) throw new RuleEvaluationException("path() needs at least one part.");
         var segments = new List<string>();
@@ -91,14 +91,14 @@ public static class RuleFunctions
                 case IntegerValue { Value: var n }:
                     segments.Add(n.ToString(System.Globalization.CultureInfo.InvariantCulture));
                     break;
-                case ReferenceValue { Path: var path }:
+                case DocumentReferenceValue { Path: var path }:
                     segments.AddRange(path.Split('/', StringSplitOptions.RemoveEmptyEntries));
                     break;
                 default:
                     throw new RuleEvaluationException($"A path segment must be a string, int or path, not a {RuleValues.TypeName(a)}.");
             }
         }
-        return new ReferenceValue(string.Join('/', segments));
+        return new DocumentReferenceValue(string.Join('/', segments));
     }
 
     private static IntegerValue Size(Value arg) => new IntegerValue(arg switch

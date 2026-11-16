@@ -100,7 +100,7 @@ public static partial class RuleText
             {
                 // Precedence 7 (unary), not 9: '.' is a path character, so `/a/b.c` would read back as one path — a path
             // literal is bracketed before `.field`, `[i]` and `.method()`: `(/a/b).c`.
-            LiteralExpression { Value: ReferenceValue { Path: var lp } } when readable && IsPlainPath(lp) => ("/" + lp, 7),
+            LiteralExpression { Value: DocumentReferenceValue { Path: var lp } } when readable && IsPlainPath(lp) => ("/" + lp, 7),
             LiteralExpression l => (Literal(l.Value), l.Value is IntegerValue { Value: < 0 } or DoubleValue { Value: < 0 } ? 7 : 9),
                 VarExpression v => (Name(v.Name), 9),
                 MemberExpression m => ($"{Write(m.Target, 8)}.{Name(m.Name)}", 8),
@@ -176,7 +176,7 @@ public static partial class RuleText
         DoubleValue d => Double(d.Value),
         StringValue s => Quote(s.Value),
         TimestampValue t => $"timestamp({Quote(t.Value.ToString("O", CultureInfo.InvariantCulture))})",
-        ReferenceValue r => $"path({Quote(r.Path)})",
+        DocumentReferenceValue r => $"path({Quote(r.Path)})",
         BytesValue b => $"bytes({Quote(Convert.ToBase64String(b.Value))})",
         ArrayValue a => $"[{string.Join(", ", a.Values.Select(Literal))}]",
         MapValue m => $"{{{string.Join(", ", m.Fields.Select(kv => $"{Quote(kv.Key)}: {Literal(kv.Value)}"))}}}",
@@ -537,7 +537,7 @@ public static partial class RuleText
             if (parts.Count == 0) throw Error("A path needs at least one segment after /databases/$(database)/documents", t);
 
             return parts.All(x => x is LiteralExpression)
-                ? new LiteralExpression(new ReferenceValue(string.Join('/', parts.Select(x => ((StringValue)((LiteralExpression)x).Value).Value))))
+                ? new LiteralExpression(new DocumentReferenceValue(string.Join('/', parts.Select(x => ((StringValue)((LiteralExpression)x).Value).Value))))
                 : new CallExpression("path", parts);
         }
 
@@ -564,7 +564,7 @@ public static partial class RuleText
                         ? new LiteralExpression(new TimestampValue(ts))
                         : throw Error($"'{s}' is not an ISO-8601 timestamp", name);
                 case "path":
-                    return new LiteralExpression(new ReferenceValue(s));
+                    return new LiteralExpression(new DocumentReferenceValue(s));
                 case "bytes":
                     try { return new LiteralExpression(new BytesValue(Convert.FromBase64String(s))); }
                     catch (FormatException) { throw Error($"'{s}' is not base64", name); }

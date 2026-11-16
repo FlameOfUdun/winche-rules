@@ -22,24 +22,25 @@ public static class RuleValues
     public static ArrayValue Strings(IEnumerable<string> items) => new([.. items.Select(s => (Value)new StringValue(s))]);
 
     /// <summary>
-    /// The rules-language name of <paramref name="v"/>'s type: <c>string</c>, <c>int</c>, <c>float</c>, <c>bool</c>,
-    /// <c>null</c>, <c>map</c>, <c>list</c>, <c>timestamp</c>, <c>bytes</c>, <c>path</c> (a document reference),
-    /// <c>fileRef</c>, <c>userRef</c> or <c>latlng</c>.
+    /// The rules-language name of <paramref name="v"/>'s type, the same as everywhere (Winche.Core's value types):
+    /// <c>string</c>, <c>integer</c>, <c>double</c>, <c>boolean</c>, <c>null</c>, <c>map</c>, <c>array</c>,
+    /// <c>timestamp</c>, <c>bytes</c>, <c>documentReference</c> (a path built in a rule is one too),
+    /// <c>fileReference</c>, <c>userReference</c> or <c>geoPoint</c>.
     /// </summary>
     public static string TypeName(Value v) => v switch
     {
         NullValue => "null",
-        BooleanValue => "bool",
-        IntegerValue => "int",
-        DoubleValue => "float",
+        BooleanValue => "boolean",
+        IntegerValue => "integer",
+        DoubleValue => "double",
         StringValue => "string",
         BytesValue => "bytes",
         TimestampValue => "timestamp",
-        ReferenceValue => "path",
-        FileRefValue => "fileRef",
-        UserRefValue => "userRef",
-        GeoPointValue => "latlng",
-        ArrayValue => "list",
+        DocumentReferenceValue => "documentReference",
+        FileReferenceValue => "fileReference",
+        UserReferenceValue => "userReference",
+        GeoPointValue => "geoPoint",
+        ArrayValue => "array",
         MapValue => "map",
         _ => v.GetType().Name,
     };
@@ -51,10 +52,10 @@ public static class RuleValues
     /// </summary>
     public static bool AreEqual(Value a, Value b) => (a, b) switch
     {
-        (UserRefValue u, StringValue s) => u.Uid == s.Value,
-        (StringValue s, UserRefValue u) => u.Uid == s.Value,
-        (FileRefValue f, StringValue s) => f.Path == s.Value,
-        (StringValue s, FileRefValue f) => f.Path == s.Value,
+        (UserReferenceValue u, StringValue s) => u.Uid == s.Value,
+        (StringValue s, UserReferenceValue u) => u.Uid == s.Value,
+        (FileReferenceValue f, StringValue s) => f.Path == s.Value,
+        (StringValue s, FileReferenceValue f) => f.Path == s.Value,
         _ => a.Rank == b.Rank && ValueComparer.Instance.Compare(a, b) == 0,
     };
 

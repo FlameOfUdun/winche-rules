@@ -46,6 +46,6 @@ internal static class RulePath
     private static Dictionary<string, Value> Values(IReadOnlyList<PathSegment> pattern, Dictionary<string, string> raw)
     {
         var recursive = pattern.OfType<RecursiveSegment>().Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
-        return raw.ToDictionary(kv => kv.Key, kv => recursive.Contains(kv.Key) ? (Value)new ReferenceValue(kv.Value) : new StringValue(kv.Value));
+        return raw.ToDictionary(kv => kv.Key, kv => recursive.Contains(kv.Key) ? (Value)new DocumentReferenceValue(kv.Value) : new StringValue(kv.Value));
     }
 }

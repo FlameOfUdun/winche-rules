@@ -157,8 +157,8 @@ Every `{name}` in the enclosing matches is a variable: in `match users/{uid}/not
 | timestamps | `timestamp('2027-01-01T00:00:00Z')` |
 | paths | `/teams/t1`, `/users/$(request.auth.uid)` — see [Building paths](#building-paths) (or `path('teams/t1')`) |
 | bytes | `bytes('AAEC')` (base64) |
-| geo points | no literal; a stored location is a `latlng` — read `.latitude` and `.longitude` (a map that merely has those keys is not a `latlng`) |
-| file and user references | no literal; a stored reference is a `fileRef` (a file's path) or a `userRef` (a user's uid) |
+| geo points | no literal; a stored location is a `geoPoint` — read `.latitude` and `.longitude` (a map that merely has those keys is not a `geoPoint`) |
+| file and user references | no literal; a stored reference is a `fileReference` (a file's path) or a `userReference` (a user's uid) |
 
 A field whose name isn't a plain identifier goes in backticks: ``resource.`first name` ``.
 
@@ -178,7 +178,7 @@ Loosest first:
 | `==` `!=` `<` `<=` `>` `>=` | comparisons |
 | `x in list`, `key in map` | membership |
 | `x not in list` | not a member — same as `!(x in list)` |
-| `x is string` | type check: `string int float number bool null map list timestamp bytes path fileRef userRef latlng` |
+| `x is string` | type check: `string integer double number boolean null map array timestamp bytes documentReference fileReference userReference geoPoint` (Winche.Core's value types; `number` is an integer or a double, and a path built in a rule is a `documentReference`) |
 | `map has only [...]` | the map has no keys but these |
 | `map has all [...]` / `has any [...]` | the map has every / at least one of these keys |
 | `changes only [...]` | an update changes no fields but these |
@@ -201,9 +201,9 @@ still a path.
 `changes …` compares the document after the update with the one before
 (`request.resource.data` against `resource.data`); use it in `update` rules.
 
-Numbers compare by value across ints and floats (`1 == 1.0`). Values of different kinds (a string and a number)
-are never equal — so `!=` between them is true — and ordering them (`<`) is an error. The exception: a `userRef`
-equals its uid and a `fileRef` its path as a string, so `resource.owner == request.auth.uid` holds whether `owner`
+Numbers compare by value across integers and doubles (`1 == 1.0`). Values of different kinds (a string and a number)
+are never equal — so `!=` between them is true — and ordering them (`<`) is an error. The exception: a `userReference`
+equals its uid and a `fileReference` its path as a string, so `resource.owner == request.auth.uid` holds whether `owner`
 is stored as a user reference or a string.
 
 ---
@@ -322,7 +322,7 @@ allow create: if request.resource.data has only ['title', 'body', 'tags']
   && request.resource.data has all ['title']
   && request.resource.data.title is string
   && request.resource.data.title.size() <= 100
-  && (!('tags' in request.resource.data) || request.resource.data.tags is list);
+  && (!('tags' in request.resource.data) || request.resource.data.tags is array);
 ```
 
 **Some fields can't change**
@@ -416,7 +416,7 @@ That's safe, but it can be surprising:
 
 - `request.auth.uid == uid` is simply false when signed out — no need to check for `null` first.
 - In `a || b`, if `a` fails, the condition is false even when `b` would be true. Put the part that can fail
-  last, or check first: `!('tags' in request.resource.data) || request.resource.data.tags is list`.
+  last, or check first: `!('tags' in request.resource.data) || request.resource.data.tags is array`.
 - Two separate `allow` lines don't affect each other: one failing doesn't stop the other granting.
 - To read an optional field, use `m.get('field', default)`: `request.resource.data.get('tags', []).size() <= 5`.
 

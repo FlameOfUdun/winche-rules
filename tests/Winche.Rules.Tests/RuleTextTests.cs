@@ -41,11 +41,11 @@ public class RuleTextTests
             RuleText.Format(Expr.Param("collection").In(Expr.Strings("analytics", "notificationLog")).Not()));
         Assert.Equal("!(collection in ['analytics', 'notificationLog'])",
             RuleText.Format(Expr.Param("collection").In(Expr.Strings("analytics", "notificationLog")).Not(), readable: false));
-        Assert.Equal("request.resource.age is int", RuleText.Format(Expr.Request("resource", "age").Is("int")));
+        Assert.Equal("request.resource.age is integer", RuleText.Format(Expr.Request("resource", "age").Is("integer")));
         Assert.Equal("(a || b) && c", RuleText.Format(Expr.All(Expr.Any(Expr.Var("a"), Expr.Var("b")), Expr.Var("c"))));
         Assert.Equal("a || b && c", RuleText.Format(Expr.Any(Expr.Var("a"), Expr.All(Expr.Var("b"), Expr.Var("c")))));
-        Assert.Equal("exists(/users/u1)", RuleText.Format(Expr.Exists(Expr.Value(new ReferenceValue("users/u1")))));
-        Assert.Equal("exists(path('users/u1'))", RuleText.Format(Expr.Exists(Expr.Value(new ReferenceValue("users/u1"))), readable: false));
+        Assert.Equal("exists(/users/u1)", RuleText.Format(Expr.Exists(Expr.Value(new DocumentReferenceValue("users/u1")))));
+        Assert.Equal("exists(path('users/u1'))", RuleText.Format(Expr.Exists(Expr.Value(new DocumentReferenceValue("users/u1"))), readable: false));
         Assert.Equal("(/a/b.c).d == (/x/$(y)).size()", RuleText.Format(RuleText.Parse("path('a/b.c').d == path('x', y).size()")));
         Assert.Equal("resource.`odd name`.`in`", RuleText.Format(Expr.Resource("odd name", "in")));
         Assert.Equal("1.0 == 1 && -2 < x", RuleText.Format(Expr.All(Expr.Const(1.0).Eq(Expr.Const(1L)), Expr.Const(-2L).Lt(Expr.Var("x")))));
@@ -130,7 +130,7 @@ public class RuleTextTests
         3 => new DoubleValue(Math.Round(rng.NextDouble() * 200 - 100, rng.Next(0, 4))),   // finite: stored as JSON
         4 => new StringValue(new string([.. Enumerable.Range(0, rng.Next(0, 5)).Select(_ => "ab'\"\\\n é`"[rng.Next(9)])])),
         5 => new TimestampValue(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(rng.Next(100000))),
-        6 => new ReferenceValue("a/" + rng.Next(10)),
+        6 => new DocumentReferenceValue("a/" + rng.Next(10)),
         7 => new BytesValue([(byte)rng.Next(256), (byte)rng.Next(256)]),
         8 => new ArrayValue([.. Enumerable.Range(0, rng.Next(0, 3)).Select(_ => GenValue(rng, depth - 1))]),
         _ => new MapValue(Enumerable.Range(0, rng.Next(0, 3)).ToDictionary(k => "k" + k, _ => GenValue(rng, depth - 1))),
